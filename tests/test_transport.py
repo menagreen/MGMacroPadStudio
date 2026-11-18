@@ -18,7 +18,7 @@ def test_read_only_protection():
         transport.transfer(group=0x06, subcommand=9, payload=bytes(59))
 
     # Bootloader command (group 0x55) must be rejected
-    with pytest.raises(ReadOnlyViolationError):
+    with pytest.raises(TransportError):
         transport.transfer(group=0x55, subcommand=0)
 
 

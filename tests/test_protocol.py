@@ -98,3 +98,32 @@ def test_decode_keymap():
     assert bindings[7].description == "Volume Up"
     assert bindings[8].label.startswith("Knob CCW")
     assert bindings[8].description == "Volume Down"
+
+
+def test_set_key_binding():
+    transport = MagicMock()
+    transport.transfer.return_value = bytes([0xAA, 16, 1] + [0] * 61)
+    proto = SdcxProtocol(transport)
+
+    ok = proto.set_key_binding(key_index=0, type_id=TYPE_STANDARD, c1=0, c2=0x1E)
+    assert ok
+    call_args = transport.transfer.call_args[0]
+    assert call_args[0] == 0x06
+    assert call_args[1] == 16
+    payload = call_args[2]
+    assert payload[0] == 7
+    assert payload[6] == TYPE_STANDARD
+    assert payload[8] == 0x1E
+
+
+def test_set_light_config():
+    transport = MagicMock()
+    transport.transfer.return_value = bytes([0xAA, 11] + [0] * 62)
+    proto = SdcxProtocol(transport)
+
+    ok = proto.set_light_config(mode=1, brightness=4, speed=2, color_type=1, hue=120)
+    assert ok
+    call_args = transport.transfer.call_args[0]
+    assert call_args[0] == 0x06
+    assert call_args[1] == 11
+

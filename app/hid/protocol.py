@@ -314,3 +314,45 @@ class SdcxProtocol:
                 )
 
         return bindings
+
+    def set_key_binding(
+        self,
+        key_index: int,
+        type_id: int,
+        c1: int = 0,
+        c2: int = 0,
+        c3: int = 0,
+        layer: int = 0,
+    ) -> bool:
+        """Write key assignment directly to macropad firmware flash."""
+        offset = key_index * 4
+        # Command wire format: [0x06, 16, 7, off_lo, off_hi, 0, layer, 0, type, c1, c2, c3]
+        payload = bytes([7, offset & 0xFF, (offset >> 8) & 0xFF, 0, layer, 0, type_id, c1, c2, c3])
+        resp = self.transport.transfer(CMD_GROUP_CONFIG, 16, payload)
+        return len(resp) >= 2 and resp[0] == 0xAA
+
+    def set_light_config(
+        self,
+        mode: int,
+        brightness: int = 4,
+        speed: int = 2,
+        direction: int = 0,
+        color_type: int = 0,
+        hue: int = 0,
+        sat: int = 255,
+        val: int = 255,
+    ) -> bool:
+        """Set global lighting configuration."""
+        brightness = max(0, min(4, brightness))
+        speed = max(0, min(4, speed))
+        mode = max(0, min(5, mode))
+        if mode == 0:
+            color_type = 0
+            brightness = 0
+            val = 0
+
+        cfg = bytes([1, 0, mode, brightness, speed, direction, color_type, 0, hue & 0xFF, sat & 0xFF, val & 0xFF])
+        payload = bytes([11, 0, 0]) + cfg
+        resp = self.transport.transfer(CMD_GROUP_CONFIG, 11, payload)
+        return len(resp) >= 2 and resp[0] == 0xAA
+

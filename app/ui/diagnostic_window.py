@@ -1,21 +1,26 @@
-"""Diagnostic Window for Phase 1 - HID Inspection & Real-Time Monitoring."""
+"""Diagnostic & Configuration Window for MacroPad Studio."""
 from __future__ import annotations
 
 import logging
-from typing import List, Optional
+from typing import Dict, List, Optional
 from datetime import datetime
 
 from PySide6.QtCore import Qt, QTimer, Signal, QObject
 from PySide6.QtGui import QColor, QFont
 from PySide6.QtWidgets import (
     QApplication,
+    QCheckBox,
+    QComboBox,
     QFrame,
     QGridLayout,
+    QGroupBox,
     QHBoxLayout,
     QHeaderView,
     QLabel,
     QMainWindow,
+    QMessageBox,
     QPushButton,
+    QSlider,
     QTableWidget,
     QTableWidgetItem,
     QTextEdit,
@@ -25,7 +30,16 @@ from PySide6.QtWidgets import (
 
 from app.hid.discovery import HidDiscovery, HidDeviceInfo
 from app.hid.transport import HidTransport
-from app.hid.protocol import SdcxProtocol, DeviceConfig, LightConfig, KeyBinding
+from app.hid.protocol import (
+    SdcxProtocol,
+    DeviceConfig,
+    LightConfig,
+    KeyBinding,
+    TYPE_STANDARD,
+    TYPE_CONSUMER,
+    TYPE_DISABLED,
+    LIGHT_MODES,
+)
 from app.diagnostics.event_monitor import WindowsInputMonitor, InputEvent
 
 logger = logging.getLogger(__name__)
@@ -49,23 +63,13 @@ QPushButton#macropadKey {
     border-radius: 6px;
     color: #F0F4F8;
     font-weight: bold;
-    font-size: 14px;
-    min-width: 90px;
-    min-height: 70px;
+    font-size: 13px;
+    min-width: 85px;
+    min-height: 65px;
 }
 QPushButton#macropadKey:hover {
     border-color: #00ADB5;
     background-color: #2D3342;
-}
-QPushButton#macropadKeyActive {
-    background-color: #00ADB5;
-    border: 2px solid #393E46;
-    border-radius: 6px;
-    color: #FFFFFF;
-    font-weight: bold;
-    font-size: 14px;
-    min-width: 90px;
-    min-height: 70px;
 }
 QPushButton#macropadKnob {
     background-color: #222831;
@@ -73,11 +77,32 @@ QPushButton#macropadKnob {
     border-radius: 35px;
     color: #FFFFFF;
     font-weight: bold;
-    font-size: 12px;
+    font-size: 11px;
     min-width: 70px;
     min-height: 70px;
     max-width: 70px;
     max-height: 70px;
+}
+QPushButton.actionBtn {
+    background-color: #00ADB5;
+    color: #FFFFFF;
+    font-weight: bold;
+    border: none;
+    border-radius: 5px;
+    padding: 8px 14px;
+}
+QPushButton.actionBtn:hover {
+    background-color: #00C4CC;
+}
+QPushButton.secondaryBtn {
+    background-color: #2D3342;
+    color: #E0E6ED;
+    border: 1px solid #3E475B;
+    border-radius: 5px;
+    padding: 6px 12px;
+}
+QPushButton.secondaryBtn:hover {
+    background-color: #383F52;
 }
 QTableWidget {
     background-color: #1A1D24;
@@ -100,6 +125,13 @@ QTextEdit {
     font-family: 'Consolas', monospace;
     font-size: 12px;
 }
+QComboBox, QSlider {
+    background-color: #252A36;
+    border: 1px solid #363D4E;
+    border-radius: 4px;
+    padding: 4px;
+    color: #FFFFFF;
+}
 QLabel#badgeOk {
     background-color: #00ADB5;
     color: #FFFFFF;
@@ -121,41 +153,69 @@ QLabel#titleLabel {
 }
 """
 
+PRESET_KEYS = [
+    ("Número 1", TYPE_STANDARD, 0, 0x1E, 0),
+    ("Número 2", TYPE_STANDARD, 0, 0x1F, 0),
+    ("Número 3", TYPE_STANDARD, 0, 0x20, 0),
+    ("Número 4", TYPE_STANDARD, 0, 0x21, 0),
+    ("Número 5", TYPE_STANDARD, 0, 0x22, 0),
+    ("Número 6", TYPE_STANDARD, 0, 0x23, 0),
+    ("F13 (Para OBS / Macros)", TYPE_STANDARD, 0, 0x68, 0),
+    ("F14 (Para OBS / Macros)", TYPE_STANDARD, 0, 0x69, 0),
+    ("F15 (Para OBS / Macros)", TYPE_STANDARD, 0, 0x6A, 0),
+    ("F16 (Para OBS / Macros)", TYPE_STANDARD, 0, 0x6B, 0),
+    ("F17 (Para OBS / Macros)", TYPE_STANDARD, 0, 0x6C, 0),
+    ("F18 (Para OBS / Macros)", TYPE_STANDARD, 0, 0x6D, 0),
+    ("Ctrl + C (Copiar)", TYPE_STANDARD, 1, 0x06, 0),
+    ("Ctrl + V (Pegar)", TYPE_STANDARD, 1, 0x19, 0),
+    ("Ctrl + Z (Deshacer)", TYPE_STANDARD, 1, 0x1D, 0),
+    ("Enter", TYPE_STANDARD, 0, 0x28, 0),
+    ("Espacio", TYPE_STANDARD, 0, 0x2C, 0),
+    ("Escape", TYPE_STANDARD, 0, 0x29, 0),
+    ("Play / Pause (Multimedia)", TYPE_CONSUMER, 0xCD, 0, 0),
+    ("Siguiente Pista (Multimedia)", TYPE_CONSUMER, 0xB5, 0, 0),
+    ("Pista Anterior (Multimedia)", TYPE_CONSUMER, 0xB6, 0, 0),
+    ("Silencio / Mute", TYPE_CONSUMER, 0xE2, 0, 0),
+    ("Subir Volumen", TYPE_CONSUMER, 0xE9, 0, 0),
+    ("Bajar Volumen", TYPE_CONSUMER, 0xEA, 0, 0),
+    ("Ctrl + A (Fábrica)", TYPE_STANDARD, 1, 0x04, 0),
+]
+
 
 class EventBridge(QObject):
     event_received = Signal(InputEvent)
 
 
 class DiagnosticWindow(QMainWindow):
-    """Main window for Phase 1 hardware diagnostics and live input monitor."""
+    """Main window for hardware diagnostics, configuration and live input monitor."""
 
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("MacroPad Studio — Diagnóstico HID (Fase 1)")
-        self.resize(1100, 750)
+        self.setWindowTitle("MacroPad Studio — Configurador HID")
+        self.resize(1180, 800)
         self.setStyleSheet(DARK_STYLE)
 
         self.discovery = HidDiscovery()
-        self.transport = HidTransport(read_only=True)
+        self.transport = HidTransport(read_only=False)
         self.protocol = SdcxProtocol(self.transport)
 
         self.bridge = EventBridge()
         self.bridge.event_received.connect(self._on_input_event)
 
         self.input_monitor = WindowsInputMonitor(callback=self.bridge.event_received.emit)
-        self.key_buttons: dict[int, QPushButton] = {}
+        self.key_buttons: Dict[int, QPushButton] = {}
         self.knob_button: Optional[QPushButton] = None
+        self.selected_key_index: int = 0
+        self.current_bindings: List[KeyBinding] = []
 
         self._init_ui()
         self.input_monitor.start()
 
-        # Timer to poll connection and refresh status
         self.refresh_timer = QTimer(self)
         self.refresh_timer.timeout.connect(self.scan_and_inspect)
-        self.refresh_timer.start(3000)
+        self.refresh_timer.start(3500)
 
-        # Initial scan
-        QTimer.singleShot(100, self.scan_and_inspect)
+        QTimer.singleShot(150, self.scan_and_inspect)
 
     def closeEvent(self, event):
         self.input_monitor.stop()
@@ -167,11 +227,11 @@ class DiagnosticWindow(QMainWindow):
         self.setCentralWidget(central)
         main_layout = QVBoxLayout(central)
         main_layout.setContentsMargins(16, 16, 16, 16)
-        main_layout.setSpacing(14)
+        main_layout.setSpacing(12)
 
         # Header Bar
         header = QHBoxLayout()
-        title = QLabel("MacroPad Studio — Fase 1: Diagnóstico e Inspección HID")
+        title = QLabel("MacroPad Studio — Configurador & Diagnóstico HID")
         title.setObjectName("titleLabel")
         header.addWidget(title)
         header.addStretch()
@@ -180,22 +240,20 @@ class DiagnosticWindow(QMainWindow):
         self.status_badge.setObjectName("badgeWarn")
         header.addWidget(self.status_badge)
 
-        self.safe_badge = QLabel("FASE 1: SOLO LECTURA (Hardware Protegido)")
-        self.safe_badge.setToolTip("En esta fase no se sobrescribe la memoria flash del macropad para evitar desconfiguraciones accidentales.")
+        self.safe_badge = QLabel("ESCRITURA HABILITADA (Hardware Activo)")
         self.safe_badge.setObjectName("badgeOk")
         header.addWidget(self.safe_badge)
 
         main_layout.addLayout(header)
 
-        # Middle Area: Left (Visual Pad + Info), Right (Interfaces & Keymap)
-        mid_layout = QHBoxLayout()
-        mid_layout.setSpacing(14)
+        # Top area: Visual Pad & Device info (Left) + Quick Configuration (Right)
+        top_layout = QHBoxLayout()
+        top_layout.setSpacing(14)
 
         # Left Column: Visual representation
         left_col = QVBoxLayout()
-        left_col.setSpacing(12)
+        left_col.setSpacing(10)
 
-        # Visual Pad Frame
         pad_frame = QFrame()
         pad_frame.setObjectName("deviceCard")
         pad_vbox = QVBoxLayout(pad_frame)
@@ -206,7 +264,6 @@ class DiagnosticWindow(QMainWindow):
         grid = QGridLayout()
         grid.setSpacing(10)
 
-        # 6 Keys: 2 rows of 3
         key_defs = [
             (0, "KEY 1", 0, 0),
             (1, "KEY 2", 0, 1),
@@ -223,7 +280,6 @@ class DiagnosticWindow(QMainWindow):
             self.key_buttons[idx] = btn
             grid.addWidget(btn, r, c)
 
-        # Knob button on the right
         self.knob_button = QPushButton("KNOB\n(Vol/Mute)")
         self.knob_button.setObjectName("macropadKnob")
         self.knob_button.setCursor(Qt.PointingHandCursor)
@@ -232,66 +288,121 @@ class DiagnosticWindow(QMainWindow):
 
         pad_vbox.addLayout(grid)
 
-        # Control detail label below the pad
-        self.control_detail = QLabel("Haz clic en cualquier tecla o presiona una tecla física en el macropad.")
-        self.control_detail.setStyleSheet("color: #A0ABC0; font-size: 12px; padding: 4px;")
+        self.control_detail = QLabel("Selecciona una tecla para editar su acción en el firmware.")
+        self.control_detail.setStyleSheet("color: #00ADB5; font-weight: bold; font-size: 12px; padding: 4px;")
         self.control_detail.setAlignment(Qt.AlignCenter)
         pad_vbox.addWidget(self.control_detail)
 
         left_col.addWidget(pad_frame)
 
-        # Device Info Card
-        info_frame = QFrame()
-        info_frame.setObjectName("deviceCard")
-        info_vbox = QVBoxLayout(info_frame)
-        info_title = QLabel("Información de Hardware")
-        info_title.setStyleSheet("font-weight: bold; color: #00ADB5;")
-        info_vbox.addWidget(info_title)
+        # Quick Actions Frame
+        quick_frame = QFrame()
+        quick_frame.setObjectName("deviceCard")
+        quick_vbox = QVBoxLayout(quick_frame)
+        quick_title = QLabel("Asignaciones Rápidas de Teclas")
+        quick_title.setStyleSheet("font-weight: bold; color: #00ADB5;")
+        quick_vbox.addWidget(quick_title)
 
-        self.info_label = QLabel("Conectando al dispositivo...")
-        self.info_label.setWordWrap(True)
-        info_vbox.addWidget(self.info_label)
+        quick_btns = QHBoxLayout()
+        btn_num = QPushButton("Asignar Teclas '1' a '6'")
+        btn_num.setProperty("class", "actionBtn")
+        btn_num.clicked.connect(self._auto_map_numbers)
+        quick_btns.addWidget(btn_num)
 
-        left_col.addWidget(info_frame)
-        mid_layout.addLayout(left_col, stretch=4)
+        btn_fkeys = QPushButton("Asignar F13..F18 (OBS)")
+        btn_fkeys.setProperty("class", "actionBtn")
+        btn_fkeys.clicked.connect(self._auto_map_fkeys)
+        quick_btns.addWidget(btn_fkeys)
 
-        # Right Column: Interface Table & Factory Keymap Table
+        btn_reset = QPushButton("Reset Fábrica (Ctrl+A)")
+        btn_reset.setProperty("class", "secondaryBtn")
+        btn_reset.clicked.connect(self._auto_map_factory)
+        quick_btns.addWidget(btn_reset)
+
+        quick_vbox.addLayout(quick_btns)
+        left_col.addWidget(quick_frame)
+
+        top_layout.addLayout(left_col, stretch=5)
+
+        # Right Column: Key Config Editor + RGB Control
         right_col = QVBoxLayout()
-        right_col.setSpacing(12)
+        right_col.setSpacing(10)
 
-        # Interfaces Table
-        ifaces_frame = QFrame()
-        ifaces_frame.setObjectName("deviceCard")
-        ifaces_vbox = QVBoxLayout(ifaces_frame)
-        ifaces_title = QLabel("Interfaces HID Detectadas")
-        ifaces_title.setStyleSheet("font-weight: bold; color: #00ADB5;")
-        ifaces_vbox.addWidget(ifaces_title)
+        # Key Editor Card
+        editor_frame = QFrame()
+        editor_frame.setObjectName("deviceCard")
+        editor_vbox = QVBoxLayout(editor_frame)
+        self.editor_title = QLabel("Editor de Tecla Seleccionada: Key 1")
+        self.editor_title.setStyleSheet("font-weight: bold; color: #00ADB5; font-size: 14px;")
+        editor_vbox.addWidget(self.editor_title)
 
-        self.iface_table = QTableWidget(0, 4)
-        self.iface_table.setHorizontalHeaderLabels(["MI", "Tipo / Colección", "Usage Page", "Usage"])
-        self.iface_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
-        self.iface_table.setSelectionBehavior(QTableWidget.SelectRows)
-        self.iface_table.setFixedHeight(140)
-        ifaces_vbox.addWidget(self.iface_table)
-        right_col.addWidget(ifaces_frame)
+        form_layout = QHBoxLayout()
+        form_layout.addWidget(QLabel("Acción predefinida:"))
+        self.preset_combo = QComboBox()
+        for label, _, _, _, _ in PRESET_KEYS:
+            self.preset_combo.addItem(label)
+        form_layout.addWidget(self.preset_combo, stretch=1)
 
-        # Keymap Table
+        btn_apply_key = QPushButton("Guardar en Firmware")
+        btn_apply_key.setProperty("class", "actionBtn")
+        btn_apply_key.clicked.connect(self._apply_selected_key)
+        form_layout.addWidget(btn_apply_key)
+        editor_vbox.addLayout(form_layout)
+
+        right_col.addWidget(editor_frame)
+
+        # RGB Control Card
+        rgb_frame = QFrame()
+        rgb_frame.setObjectName("deviceCard")
+        rgb_vbox = QVBoxLayout(rgb_frame)
+        rgb_title = QLabel("Control de Iluminación RGB")
+        rgb_title.setStyleSheet("font-weight: bold; color: #00ADB5; font-size: 14px;")
+        rgb_vbox.addWidget(rgb_title)
+
+        rgb_controls = QHBoxLayout()
+        rgb_controls.addWidget(QLabel("Modo:"))
+        self.rgb_mode_combo = QComboBox()
+        for mode_val, mode_name in LIGHT_MODES.items():
+            self.rgb_mode_combo.addItem(f"{mode_val}: {mode_name}", mode_val)
+        rgb_controls.addWidget(self.rgb_mode_combo)
+
+        rgb_controls.addWidget(QLabel("Brillo (0..4):"))
+        self.rgb_brightness_slider = QSlider(Qt.Horizontal)
+        self.rgb_brightness_slider.setRange(0, 4)
+        self.rgb_brightness_slider.setValue(4)
+        rgb_controls.addWidget(self.rgb_brightness_slider)
+
+        rgb_controls.addWidget(QLabel("Velocidad (0..4):"))
+        self.rgb_speed_slider = QSlider(Qt.Horizontal)
+        self.rgb_speed_slider.setRange(0, 4)
+        self.rgb_speed_slider.setValue(2)
+        rgb_controls.addWidget(self.rgb_speed_slider)
+
+        btn_apply_rgb = QPushButton("Aplicar RGB")
+        btn_apply_rgb.setProperty("class", "actionBtn")
+        btn_apply_rgb.clicked.connect(self._apply_rgb)
+        rgb_controls.addWidget(btn_apply_rgb)
+
+        rgb_vbox.addLayout(rgb_controls)
+        right_col.addWidget(rgb_frame)
+
+        # Keymap table
         keymap_frame = QFrame()
         keymap_frame.setObjectName("deviceCard")
         keymap_vbox = QVBoxLayout(keymap_frame)
-        keymap_title = QLabel("Configuración Leída del Firmware (Capa 0)")
+        keymap_title = QLabel("Configuración Actual del Firmware")
         keymap_title.setStyleSheet("font-weight: bold; color: #00ADB5;")
         keymap_vbox.addWidget(keymap_title)
 
         self.keymap_table = QTableWidget(0, 4)
         self.keymap_table.setHorizontalHeaderLabels(["Control", "Tipo", "Acción Actual", "Bytes Raw"])
         self.keymap_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
-        self.keymap_table.setFixedHeight(180)
+        self.keymap_table.setFixedHeight(140)
         keymap_vbox.addWidget(self.keymap_table)
         right_col.addWidget(keymap_frame)
 
-        mid_layout.addLayout(right_col, stretch=6)
-        main_layout.addLayout(mid_layout, stretch=6)
+        top_layout.addLayout(right_col, stretch=6)
+        main_layout.addLayout(top_layout, stretch=6)
 
         # Bottom Area: Live Event Monitor Log
         log_frame = QFrame()
@@ -311,7 +422,7 @@ class DiagnosticWindow(QMainWindow):
 
         self.log_text = QTextEdit()
         self.log_text.setReadOnly(True)
-        self.log_text.setFixedHeight(150)
+        self.log_text.setFixedHeight(120)
         log_vbox.addWidget(self.log_text)
 
         main_layout.addWidget(log_frame, stretch=3)
@@ -324,42 +435,106 @@ class DiagnosticWindow(QMainWindow):
         self.log_text.append(f"[{timestamp}] {msg}")
 
     def _select_control(self, idx: int):
-        """Display details when user clicks a button in the visual representation."""
-        if idx in self.key_buttons:
-            name = f"Tecla Física {idx + 1} (Índice firmware: {idx})"
-            action = "Ctrl + A (Keyboard)"
-            raw = "[32, 0x01, 0x04, 0x00]"
-            self.control_detail.setText(f"<b>{name}</b> | Acción: <font color='#00ADB5'>{action}</font> | Raw: {raw}")
-            btn = self.key_buttons[idx]
-            btn.setStyleSheet("border-color: #00ADB5; background-color: #2D3342;")
-            QTimer.singleShot(400, lambda b=btn: b.setStyleSheet(""))
-        elif idx in (16, 17, 18):
-            self.control_detail.setText(
-                "<b>Perilla Rotatoria (3 Acciones):</b> "
-                "Pulsar: <font color='#FF5722'>Mute</font> | "
-                "Giro Der: <font color='#00ADB5'>Vol +</font> | "
-                "Giro Izq: <font color='#00ADB5'>Vol -</font>"
-            )
-            if self.knob_button:
-                self.knob_button.setStyleSheet("background-color: #FF5722; color: #FFFFFF;")
-                QTimer.singleShot(400, lambda: self.knob_button.setStyleSheet(""))
+        self.selected_key_index = idx
+        label_text = f"Key {idx + 1}" if idx < 6 else ("Knob Press" if idx == 16 else ("Knob CW" if idx == 17 else "Knob CCW"))
+        self.editor_title.setText(f"Editor de Control Seleccionado: {label_text} (Índice {idx})")
+        self.control_detail.setText(f"Editando: <b>{label_text}</b> — Selecciona una acción en el panel derecho y pulsa 'Guardar en Firmware'.")
+
+    def _apply_selected_key(self):
+        idx = self.selected_key_index
+        preset_idx = self.preset_combo.currentIndex()
+        if preset_idx < 0 or preset_idx >= len(PRESET_KEYS):
+            return
+
+        name, t, c1, c2, c3 = PRESET_KEYS[preset_idx]
+        try:
+            ok = self.protocol.set_key_binding(idx, t, c1, c2, c3)
+            if ok:
+                self.log_message(f"Firmware actualizado: Control {idx} configurado como '{name}'")
+                self.scan_and_inspect()
+            else:
+                self.log_message(f"Error: Dispositivo no confirmó escritura para control {idx}")
+        except Exception as e:
+            self.log_message(f"Error escribiendo en hardware: {e}")
+
+    def _auto_map_numbers(self):
+        """Map keys 1..6 to numbers 1..6."""
+        self.log_message("Escribiendo auto-mapeo: Teclas 1 a 6...")
+        for i in range(6):
+            usage = 0x1E + i  # 1 to 6
+            self.protocol.set_key_binding(i, TYPE_STANDARD, 0, usage, 0)
+        self.log_message("Auto-mapeo a números 1..6 completado.")
+        self.scan_and_inspect()
+
+    def _auto_map_fkeys(self):
+        """Map keys 1..6 to F13..F18."""
+        self.log_message("Escribiendo auto-mapeo: F13 a F18 (ideal para OBS)...")
+        for i in range(6):
+            usage = 0x68 + i  # F13 to F18
+            self.protocol.set_key_binding(i, TYPE_STANDARD, 0, usage, 0)
+        self.log_message("Auto-mapeo a F13..F18 completado.")
+        self.scan_and_inspect()
+
+    def _auto_map_factory(self):
+        """Reset keys 1..6 to factory Ctrl+A."""
+        self.log_message("Restableciendo teclas a configuración de fábrica (Ctrl+A)...")
+        for i in range(6):
+            self.protocol.set_key_binding(i, TYPE_STANDARD, 1, 0x04, 0)
+        self.scan_and_inspect()
+
+    def _apply_rgb(self):
+        mode_val = self.rgb_mode_combo.currentData()
+        brightness = self.rgb_brightness_slider.value()
+        speed = self.rgb_speed_slider.value()
+        try:
+            ok = self.protocol.set_light_config(mode_val, brightness, speed)
+            if ok:
+                self.log_message(f"RGB actualizado: Modo {mode_val}, Brillo {brightness}, Velocidad {speed}")
+            else:
+                self.log_message("Error: Dispositivo no confirmó actualización RGB")
+        except Exception as e:
+            self.log_message(f"Error aplicando RGB: {e}")
 
     def _on_input_event(self, evt: InputEvent):
-        """Handle incoming input events and highlight UI."""
+        """Handle incoming input events and highlight individual keys."""
         self.log_message(f"ENTRADA: {evt.event_type:10s} | {evt.key_name:20s} | {evt.details}")
 
-        # Highlight keys
-        if "Ctrl + A" in evt.key_name or "Key 1..6" in evt.key_name or evt.vk_code == ord('A'):
-            self.control_detail.setText("<font color='#00ADB5'><b>¡Tecla Física Detectada!</b> Acción recibida: Ctrl + A</font>")
-            for btn in self.key_buttons.values():
+        # Check for specific numbers '1'..'6'
+        vk = evt.vk_code
+        if ord('1') <= vk <= ord('6'):
+            idx = vk - ord('1')
+            if idx in self.key_buttons:
+                btn = self.key_buttons[idx]
                 btn.setStyleSheet("background-color: #00ADB5; color: #FFFFFF; border: 2px solid #FFFFFF;")
-                QTimer.singleShot(300, lambda b=btn: b.setStyleSheet(""))
-        elif "Knob" in evt.key_name or evt.vk_code in (0xAD, 0xAE, 0xAF):
-            action_desc = "Silencio (Mute)" if evt.vk_code == 0xAD else ("Volumen +" if evt.vk_code == 0xAF else "Volumen -")
-            self.control_detail.setText(f"<font color='#FF5722'><b>¡Perilla Detectada!</b> Acción: {action_desc}</font>")
+                QTimer.singleShot(250, lambda b=btn: b.setStyleSheet(""))
+                self.control_detail.setText(f"<font color='#00ADB5'><b>¡Tecla Física {idx+1} Pulsada!</b> Reporte: '{chr(vk)}'</font>")
+                return
+
+        # Check for F13..F18
+        if 0x7C <= vk <= 0x81:  # VK_F13 to VK_F18
+            idx = vk - 0x7C
+            if idx in self.key_buttons:
+                btn = self.key_buttons[idx]
+                btn.setStyleSheet("background-color: #00ADB5; color: #FFFFFF; border: 2px solid #FFFFFF;")
+                QTimer.singleShot(250, lambda b=btn: b.setStyleSheet(""))
+                self.control_detail.setText(f"<font color='#00ADB5'><b>¡Tecla Física {idx+1} Pulsada!</b> Reporte: F{13+idx}</font>")
+                return
+
+        # Check knob
+        if evt.vk_code in (0xAD, 0xAE, 0xAF):
+            action = "Mute" if evt.vk_code == 0xAD else ("Vol +" if evt.vk_code == 0xAF else "Vol -")
             if self.knob_button:
                 self.knob_button.setStyleSheet("background-color: #FF5722; color: #FFFFFF; border: 3px solid #FFFFFF;")
-                QTimer.singleShot(300, lambda: self.knob_button.setStyleSheet(""))
+                QTimer.singleShot(250, lambda: self.knob_button.setStyleSheet(""))
+                self.control_detail.setText(f"<font color='#FF5722'><b>¡Perilla Detectada!</b> Acción: {action}</font>")
+                return
+
+        # Fallback for Ctrl + A
+        if "Ctrl + A" in evt.key_name:
+            for btn in self.key_buttons.values():
+                btn.setStyleSheet("background-color: #E67E22; color: #FFFFFF;")
+                QTimer.singleShot(250, lambda b=btn: b.setStyleSheet(""))
+            self.control_detail.setText("<font color='#E67E22'>Pulsación detectada con mapeo compartido de fábrica (Ctrl+A).</font>")
 
     def scan_and_inspect(self):
         """Scan HID devices and inspect macropad state."""
@@ -368,8 +543,6 @@ class DiagnosticWindow(QMainWindow):
             self.status_badge.setText("Desconectado")
             self.status_badge.setObjectName("badgeWarn")
             self.status_badge.setStyle(self.status_badge.style())
-            self.info_label.setText("No se detectó ningún dispositivo con VID 0x6D80 y PID 0xDC81.")
-            self.iface_table.setRowCount(0)
             self.keymap_table.setRowCount(0)
             return
 
@@ -377,38 +550,22 @@ class DiagnosticWindow(QMainWindow):
         self.status_badge.setObjectName("badgeOk")
         self.status_badge.setStyle(self.status_badge.style())
 
-        # Populate interface table
-        self.iface_table.setRowCount(len(interfaces))
-        for r, iface in enumerate(interfaces):
-            self.iface_table.setItem(r, 0, QTableWidgetItem(f"MI_{iface.interface_number:02d}"))
-            self.iface_table.setItem(r, 1, QTableWidgetItem(iface.interface_description))
-            self.iface_table.setItem(r, 2, QTableWidgetItem(f"0x{iface.usage_page:04X}"))
-            self.iface_table.setItem(r, 3, QTableWidgetItem(f"0x{iface.usage:02X}"))
-
-        # Inspect config channel if not already open
         cfg_iface = self.discovery.find_config_interface()
         if not cfg_iface:
-            self.info_label.setText("Se detectaron interfaces HID, pero no el canal de configuración (MI_02).")
             return
 
         try:
             if not self.transport.is_connected:
                 self.transport.open(cfg_iface.path)
 
-            dev_cfg = self.protocol.get_device_config()
-            light_cfg = self.protocol.get_light_config()
             bindings = self.protocol.get_keymap(0)
+            self.current_bindings = bindings
 
-            # Update info text
-            info_lines = [
-                f"<b>Modelo:</b> {cfg_iface.product} ({cfg_iface.manufacturer})",
-                f"<b>VID / PID:</b> 0x{cfg_iface.vendor_id:04X} : 0x{cfg_iface.product_id:04X}",
-                f"<b>Firmware:</b> v{dev_cfg.firmware_version} | <b>Revisión:</b> 0x{cfg_iface.release_number:04X}",
-                f"<b>Perfiles soportados:</b> {dev_cfg.profile_count} (Activo: {dev_cfg.active_profile})",
-                f"<b>Batería / Conexión:</b> {dev_cfg.battery_level}% | Modo: {dev_cfg.work_mode}",
-                f"<b>Iluminación RGB actual:</b> {light_cfg.mode_name} (Brillo: {light_cfg.brightness}/4, Vel: {light_cfg.speed}/4)",
-            ]
-            self.info_label.setText("<br>".join(info_lines))
+            # Update key button texts with their real current binding
+            for b in bindings:
+                if b.index in self.key_buttons:
+                    btn = self.key_buttons[b.index]
+                    btn.setText(f"KEY {b.index + 1}\n[{b.description}]")
 
             # Update keymap table
             self.keymap_table.setRowCount(len(bindings))
@@ -424,4 +581,3 @@ class DiagnosticWindow(QMainWindow):
 
         except Exception as e:
             logger.error(f"Error inspecting device: {e}")
-            self.info_label.setText(f"Error al leer configuración: {e}")

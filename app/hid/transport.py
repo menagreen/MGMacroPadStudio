@@ -88,8 +88,11 @@ class HidTransport:
                 raise TransportError("Device is not connected.")
 
             # Safety check
+            if group != 0x06:
+                raise TransportError(f"Command group {hex(group)} is blocked. Only configuration group 0x06 is permitted.")
+
             if self.read_only:
-                if group != 0x06 or subcommand not in self.SAFE_READ_COMMANDS:
+                if subcommand not in self.SAFE_READ_COMMANDS:
                     raise ReadOnlyViolationError(
                         f"Command group={hex(group)}, sub={hex(subcommand)} is blocked. "
                         f"Device is in strict read-only mode."

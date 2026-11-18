@@ -14,17 +14,27 @@
       "light_brightness": 4,
       "light_speed": 2,
       "key_colors": {
-        "4": [
-          0,
-          173,
-          181
-        ],
         "17": [
           0,
           173,
           181
         ],
+        "1": [
+          0,
+          173,
+          181
+        ],
         "0": [
+          0,
+          173,
+          181
+        ],
+        "4": [
+          0,
+          173,
+          181
+        ],
+        "2": [
           0,
           173,
           181
@@ -39,17 +49,7 @@
           173,
           181
         ],
-        "2": [
-          0,
-          173,
-          181
-        ],
         "5": [
-          0,
-          173,
-          181
-        ],
-        "1": [
           0,
           173,
           181
@@ -61,52 +61,12 @@
         ]
       },
       "key_bindings": {
-        "4": {
-          "type_id": 32,
-          "code1": 0,
-          "code2": 44,
-          "code3": 0,
-          "label": "Espacio",
-          "is_profile_switch": false
-        },
-        "1": {
-          "type_id": 32,
-          "code1": 1,
-          "code2": 25,
-          "code3": 0,
-          "label": "Ctrl + V (Pegar)",
-          "is_profile_switch": false
-        },
-        "18": {
-          "type_id": 48,
-          "code1": 234,
-          "code2": 0,
-          "code3": 0,
-          "label": "Bajar Volumen",
-          "is_profile_switch": false
-        },
         "0": {
           "type_id": 32,
           "code1": 1,
           "code2": 6,
           "code3": 0,
           "label": "Ctrl + C (Copiar)",
-          "is_profile_switch": false
-        },
-        "2": {
-          "type_id": 32,
-          "code1": 1,
-          "code2": 29,
-          "code3": 0,
-          "label": "Ctrl + Z (Deshacer)",
-          "is_profile_switch": false
-        },
-        "17": {
-          "type_id": 48,
-          "code1": 233,
-          "code2": 0,
-          "code3": 0,
-          "label": "Subir Volumen",
           "is_profile_switch": false
         },
         "16": {
@@ -117,13 +77,13 @@
           "label": "Silencio / Mute",
           "is_profile_switch": false
         },
-        "5": {
-          "type_id": 32,
-          "code1": 0,
-          "code2": 115,
+        "17": {
+          "type_id": 48,
+          "code1": 233,
+          "code2": 0,
           "code3": 0,
-          "label": "Cambio de Perfil (F24)",
-          "is_profile_switch": true
+          "label": "Subir Volumen",
+          "is_profile_switch": false
         },
         "3": {
           "type_id": 32,
@@ -132,6 +92,46 @@
           "code3": 0,
           "label": "Enter",
           "is_profile_switch": false
+        },
+        "1": {
+          "type_id": 32,
+          "code1": 1,
+          "code2": 25,
+          "code3": 0,
+          "label": "Ctrl + V (Pegar)",
+          "is_profile_switch": false
+        },
+        "4": {
+          "type_id": 32,
+          "code1": 0,
+          "code2": 44,
+          "code3": 0,
+          "label": "Espacio",
+          "is_profile_switch": false
+        },
+        "18": {
+          "type_id": 48,
+          "code1": 234,
+          "code2": 0,
+          "code3": 0,
+          "label": "Bajar Volumen",
+          "is_profile_switch": false
+        },
+        "2": {
+          "type_id": 32,
+          "code1": 1,
+          "code2": 29,
+          "code3": 0,
+          "label": "Ctrl + Z (Deshacer)",
+          "is_profile_switch": false
+        },
+        "5": {
+          "type_id": 32,
+          "code1": 0,
+          "code2": 115,
+          "code3": 0,
+          "label": "Cambio de Perfil (F24)",
+          "is_profile_switch": true
         }
       }
     },
@@ -148,12 +148,12 @@
       "light_brightness": 4,
       "light_speed": 2,
       "key_colors": {
-        "0": [
+        "16": [
           143,
           0,
           168
         ],
-        "3": [
+        "0": [
           143,
           0,
           168
@@ -168,12 +168,12 @@
           0,
           168
         ],
-        "16": [
+        "2": [
           143,
           0,
           168
         ],
-        "2": [
+        "3": [
           143,
           0,
           168
@@ -195,52 +195,12 @@
         ]
       },
       "key_bindings": {
-        "0": {
-          "type_id": 32,
-          "code1": 0,
-          "code2": 104,
-          "code3": 0,
-          "label": "F13 (Mute Mic OBS)",
-          "is_profile_switch": false
-        },
-        "2": {
-          "type_id": 32,
-          "code1": 0,
-          "code2": 106,
-          "code3": 0,
-          "label": "F15 (Escena 2)",
-          "is_profile_switch": false
-        },
         "16": {
           "type_id": 48,
           "code1": 226,
           "code2": 0,
           "code3": 0,
           "label": "Silencio / Mute",
-          "is_profile_switch": false
-        },
-        "3": {
-          "type_id": 32,
-          "code1": 0,
-          "code2": 107,
-          "code3": 0,
-          "label": "F16 (Grabar)",
-          "is_profile_switch": false
-        },
-        "18": {
-          "type_id": 48,
-          "code1": 234,
-          "code2": 0,
-          "code3": 0,
-          "label": "Bajar Volumen",
-          "is_profile_switch": false
-        },
-        "4": {
-          "type_id": 32,
-          "code1": 0,
-          "code2": 108,
-          "code3": 0,
-          "label": "F17 (Replay Buffer)",
           "is_profile_switch": false
         },
         "17": {
@@ -251,12 +211,36 @@
           "label": "Subir Volumen",
           "is_profile_switch": false
         },
+        "18": {
+          "type_id": 48,
+          "code1": 234,
+          "code2": 0,
+          "code3": 0,
+          "label": "Bajar Volumen",
+          "is_profile_switch": false
+        },
         "1": {
           "type_id": 32,
           "code1": 0,
           "code2": 105,
           "code3": 0,
           "label": "F14 (Escena 1)",
+          "is_profile_switch": false
+        },
+        "4": {
+          "type_id": 32,
+          "code1": 0,
+          "code2": 108,
+          "code3": 0,
+          "label": "F17 (Replay Buffer)",
+          "is_profile_switch": false
+        },
+        "2": {
+          "type_id": 32,
+          "code1": 0,
+          "code2": 106,
+          "code3": 0,
+          "label": "F15 (Escena 2)",
           "is_profile_switch": false
         },
         "5": {
@@ -266,6 +250,22 @@
           "code3": 0,
           "label": "Cambio de Perfil (F24)",
           "is_profile_switch": true
+        },
+        "0": {
+          "type_id": 32,
+          "code1": 0,
+          "code2": 104,
+          "code3": 0,
+          "label": "F13 (Mute Mic OBS)",
+          "is_profile_switch": false
+        },
+        "3": {
+          "type_id": 32,
+          "code1": 0,
+          "code2": 107,
+          "code3": 0,
+          "label": "F16 (Grabar)",
+          "is_profile_switch": false
         }
       }
     },
@@ -282,22 +282,7 @@
       "light_brightness": 4,
       "light_speed": 2,
       "key_colors": {
-        "2": [
-          0,
-          255,
-          0
-        ],
-        "3": [
-          0,
-          255,
-          0
-        ],
-        "16": [
-          0,
-          255,
-          0
-        ],
-        "0": [
+        "17": [
           0,
           255,
           0
@@ -307,12 +292,17 @@
           255,
           0
         ],
+        "0": [
+          0,
+          255,
+          0
+        ],
         "5": [
           0,
           255,
           0
         ],
-        "17": [
+        "3": [
           0,
           255,
           0
@@ -322,59 +312,29 @@
           255,
           0
         ],
+        "2": [
+          0,
+          255,
+          0
+        ],
         "18": [
+          0,
+          255,
+          0
+        ],
+        "16": [
           0,
           255,
           0
         ]
       },
       "key_bindings": {
-        "5": {
-          "type_id": 32,
-          "code1": 0,
-          "code2": 115,
-          "code3": 0,
-          "label": "Cambio de Perfil (F24)",
-          "is_profile_switch": true
-        },
-        "1": {
-          "type_id": 48,
-          "code1": 182,
-          "code2": 0,
-          "code3": 0,
-          "label": "Pista Anterior",
-          "is_profile_switch": false
-        },
-        "3": {
-          "type_id": 48,
-          "code1": 36,
-          "code2": 2,
-          "code3": 0,
-          "label": "Navegador Atrás",
-          "is_profile_switch": false
-        },
         "17": {
           "type_id": 48,
           "code1": 233,
           "code2": 0,
           "code3": 0,
           "label": "Subir Volumen",
-          "is_profile_switch": false
-        },
-        "0": {
-          "type_id": 48,
-          "code1": 205,
-          "code2": 0,
-          "code3": 0,
-          "label": "Play / Pause",
-          "is_profile_switch": false
-        },
-        "2": {
-          "type_id": 48,
-          "code1": 181,
-          "code2": 0,
-          "code3": 0,
-          "label": "Siguiente Pista",
           "is_profile_switch": false
         },
         "18": {
@@ -393,12 +353,52 @@
           "label": "Navegador Adelante",
           "is_profile_switch": false
         },
+        "2": {
+          "type_id": 48,
+          "code1": 181,
+          "code2": 0,
+          "code3": 0,
+          "label": "Siguiente Pista",
+          "is_profile_switch": false
+        },
+        "3": {
+          "type_id": 48,
+          "code1": 36,
+          "code2": 2,
+          "code3": 0,
+          "label": "Navegador Atrás",
+          "is_profile_switch": false
+        },
         "16": {
           "type_id": 48,
           "code1": 226,
           "code2": 0,
           "code3": 0,
           "label": "Silencio / Mute",
+          "is_profile_switch": false
+        },
+        "0": {
+          "type_id": 48,
+          "code1": 205,
+          "code2": 0,
+          "code3": 0,
+          "label": "Play / Pause",
+          "is_profile_switch": false
+        },
+        "5": {
+          "type_id": 32,
+          "code1": 0,
+          "code2": 115,
+          "code3": 0,
+          "label": "Cambio de Perfil (F24)",
+          "is_profile_switch": true
+        },
+        "1": {
+          "type_id": 48,
+          "code1": 182,
+          "code2": 0,
+          "code3": 0,
+          "label": "Pista Anterior",
           "is_profile_switch": false
         }
       }
@@ -416,12 +416,7 @@
       "light_brightness": 4,
       "light_speed": 2,
       "key_colors": {
-        "2": [
-          255,
-          0,
-          0
-        ],
-        "17": [
+        "5": [
           255,
           0,
           0
@@ -431,12 +426,17 @@
           0,
           0
         ],
-        "5": [
+        "16": [
           255,
           0,
           0
         ],
-        "18": [
+        "17": [
+          255,
+          0,
+          0
+        ],
+        "2": [
           255,
           0,
           0
@@ -446,7 +446,7 @@
           0,
           0
         ],
-        "16": [
+        "18": [
           255,
           0,
           0
@@ -463,52 +463,12 @@
         ]
       },
       "key_bindings": {
-        "5": {
-          "type_id": 32,
-          "code1": 0,
-          "code2": 115,
-          "code3": 0,
-          "label": "Cambio de Perfil (F24)",
-          "is_profile_switch": true
-        },
         "16": {
           "type_id": 48,
           "code1": 226,
           "code2": 0,
           "code3": 0,
           "label": "Silencio / Mute",
-          "is_profile_switch": false
-        },
-        "17": {
-          "type_id": 48,
-          "code1": 233,
-          "code2": 0,
-          "code3": 0,
-          "label": "Subir Volumen",
-          "is_profile_switch": false
-        },
-        "1": {
-          "type_id": 32,
-          "code1": 0,
-          "code2": 31,
-          "code3": 0,
-          "label": "Número 2",
-          "is_profile_switch": false
-        },
-        "4": {
-          "type_id": 32,
-          "code1": 0,
-          "code2": 34,
-          "code3": 0,
-          "label": "Número 5",
-          "is_profile_switch": false
-        },
-        "0": {
-          "type_id": 32,
-          "code1": 0,
-          "code2": 30,
-          "code3": 0,
-          "label": "Número 1",
           "is_profile_switch": false
         },
         "2": {
@@ -519,13 +479,29 @@
           "label": "Número 3",
           "is_profile_switch": false
         },
-        "3": {
+        "17": {
+          "type_id": 48,
+          "code1": 233,
+          "code2": 0,
+          "code3": 0,
+          "label": "Subir Volumen",
+          "is_profile_switch": false
+        },
+        "0": {
           "type_id": 32,
           "code1": 0,
-          "code2": 33,
+          "code2": 30,
           "code3": 0,
-          "label": "Número 4",
+          "label": "Número 1",
           "is_profile_switch": false
+        },
+        "5": {
+          "type_id": 32,
+          "code1": 0,
+          "code2": 115,
+          "code3": 0,
+          "label": "Cambio de Perfil (F24)",
+          "is_profile_switch": true
         },
         "18": {
           "type_id": 48,
@@ -533,6 +509,30 @@
           "code2": 0,
           "code3": 0,
           "label": "Bajar Volumen",
+          "is_profile_switch": false
+        },
+        "4": {
+          "type_id": 32,
+          "code1": 0,
+          "code2": 34,
+          "code3": 0,
+          "label": "Número 5",
+          "is_profile_switch": false
+        },
+        "1": {
+          "type_id": 32,
+          "code1": 0,
+          "code2": 31,
+          "code3": 0,
+          "label": "Número 2",
+          "is_profile_switch": false
+        },
+        "3": {
+          "type_id": 32,
+          "code1": 0,
+          "code2": 33,
+          "code3": 0,
+          "label": "Número 4",
           "is_profile_switch": false
         }
       }

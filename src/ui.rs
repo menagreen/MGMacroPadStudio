@@ -3,9 +3,13 @@
 //! profile management, and live USB HID synchronization.
 
 use crate::autostart::AutostartManager;
+use crate::hotkeys::{HOTKEY_F24, VK_F24};
 use crate::profiles::{KeyConfig, ProfileManager};
 use crate::protocol::SdcxDevice;
 use eframe::egui::{self, Color32, Rect, Rounding, Stroke, Vec2};
+use std::sync::{mpsc, Arc, Mutex};
+use windows_sys::Win32::UI::Input::KeyboardAndMouse::{RegisterHotKey, UnregisterHotKey, MOD_NOREPEAT};
+use windows_sys::Win32::UI::WindowsAndMessaging::{GetMessageW, MSG, WM_HOTKEY};
 
 const COLOR_MENA_GREEN: Color32 = Color32::from_rgb(0, 255, 136);
 const COLOR_CYAN: Color32 = Color32::from_rgb(0, 229, 255);
@@ -14,8 +18,8 @@ const COLOR_PANEL_BG: Color32 = Color32::from_rgb(18, 23, 33);
 const COLOR_CARD_BG: Color32 = Color32::from_rgb(24, 30, 43);
 
 pub struct MacroPadApp {
-    profile_mgr: ProfileManager,
-    device: Option<SdcxDevice>,
+    profile_mgr: Arc<Mutex<ProfileManager>>,
+    device: Arc<Mutex<Option<SdcxDevice>>>,
     device_status: String,
     device_connected: bool,
 
@@ -29,25 +33,79 @@ pub struct MacroPadApp {
     // Dialog state for new profile
     show_new_profile_dialog: bool,
     new_profile_name: String,
+
+    // Event receiver from background hotkey listener
+    event_receiver: mpsc::Receiver<u32>,
 }
 
 impl MacroPadApp {
-    pub fn new(_cc: &eframe::CreationContext<'_>) -> Self {
-        // Try opening device
-        let (device, connected, status) = match SdcxDevice::open_first() {
+    pub fn new(cc: &eframe::CreationContext<'_>) -> Self {
+        let (device_opt, connected, status) = match SdcxDevice::open_first() {
             Ok(dev) => (Some(dev), true, "Conectado (SDCX 6D80:DC81 MI_02)".to_string()),
             Err(e) => (None, false, format!("Desconectado ({e})")),
         };
 
-        let profile_mgr = ProfileManager::load_from_paths();
+        let profile_mgr = Arc::new(Mutex::new(ProfileManager::load_from_paths()));
+        let device = Arc::new(Mutex::new(device_opt));
         let autostart_enabled = AutostartManager::is_enabled();
 
-        // Initial color from key 0
-        let initial_rgb = if let Some(rgb) = profile_mgr.active_profile().key_colors.get("0") {
-            [rgb.0 as f32 / 255.0, rgb.1 as f32 / 255.0, rgb.2 as f32 / 255.0]
-        } else {
-            [0.0, 1.0, 0.53] // MenaGreen
+        // Initial sync to hardware
+        {
+            let mgr = profile_mgr.lock().unwrap();
+            if let Ok(guard) = device.lock() {
+                if let Some(ref dev) = *guard {
+                    let _ = mgr.apply_to_hardware(dev);
+                }
+            }
+        }
+
+        let initial_rgb = {
+            let mgr = profile_mgr.lock().unwrap();
+            if let Some(rgb) = mgr.active_profile().key_colors.get("0") {
+                [rgb.0 as f32 / 255.0, rgb.1 as f32 / 255.0, rgb.2 as f32 / 255.0]
+            } else {
+                [0.0, 1.0, 0.53]
+            }
         };
+
+        let (tx, rx) = mpsc::channel();
+        let thread_mgr = Arc::clone(&profile_mgr);
+        let thread_dev = Arc::clone(&device);
+        let egui_ctx = cc.egui_ctx.clone();
+
+        // Spawn background Win32 hotkey listener for Tecla 6 (F24)
+        // Works both when GUI is active or minimized!
+        std::thread::spawn(move || {
+            unsafe {
+                let ok = RegisterHotKey(std::ptr::null_mut(), HOTKEY_F24, MOD_NOREPEAT, VK_F24);
+                if ok == 0 {
+                    eprintln!("[-] Warning: Could not register F24 hotkey in GUI thread: {}", windows_sys::Win32::Foundation::GetLastError());
+                }
+
+                let mut msg: MSG = std::mem::zeroed();
+                while GetMessageW(&mut msg, std::ptr::null_mut(), 0, 0) > 0 {
+                    if msg.message == WM_HOTKEY && msg.wParam == HOTKEY_F24 as usize {
+                        // 1. Cycle profile and apply to physical hardware
+                        let mut mgr = thread_mgr.lock().unwrap();
+                        let _ = mgr.next_profile();
+
+                        if let Ok(mut guard) = thread_dev.lock() {
+                            if guard.is_none() {
+                                *guard = SdcxDevice::open_first().ok();
+                            }
+                            if let Some(ref dev) = *guard {
+                                let _ = mgr.apply_to_hardware(dev);
+                            }
+                        }
+
+                        // 2. Notify GUI to refresh UI
+                        let _ = tx.send(mgr.active_index as u32);
+                        egui_ctx.request_repaint();
+                    }
+                }
+                UnregisterHotKey(std::ptr::null_mut(), HOTKEY_F24);
+            }
+        });
 
         Self {
             profile_mgr,
@@ -57,10 +115,11 @@ impl MacroPadApp {
             selected_key_idx: 0,
             selected_color: initial_rgb,
             autostart_enabled,
-            status_message: "Listo.".to_string(),
+            status_message: "Listo. Presiona Tecla 6 para cambiar perfil y color físicamente.".to_string(),
             status_success: true,
             show_new_profile_dialog: false,
             new_profile_name: String::new(),
+            event_receiver: rx,
         }
     }
 
@@ -82,16 +141,19 @@ impl MacroPadApp {
     }
 
     fn sync_to_hardware(&mut self) {
-        if self.device.is_none() {
-            self.device = SdcxDevice::open_first().ok();
+        let mgr = self.profile_mgr.lock().unwrap();
+        let mut dev_guard = self.device.lock().unwrap();
+
+        if dev_guard.is_none() {
+            *dev_guard = SdcxDevice::open_first().ok();
         }
 
-        if let Some(ref dev) = self.device {
-            match self.profile_mgr.apply_to_hardware(dev) {
+        if let Some(ref dev) = *dev_guard {
+            match mgr.apply_to_hardware(dev) {
                 Ok(_) => {
                     self.device_connected = true;
                     self.device_status = "Conectado (SDCX 6D80:DC81 MI_02)".to_string();
-                    self.status_message = format!("¡Perfil '{}' sincronizado con el hardware físico!", self.profile_mgr.active_profile().name);
+                    self.status_message = format!("¡Perfil '{}' sincronizado con el hardware físico!", mgr.active_profile().name);
                     self.status_success = true;
                 }
                 Err(e) => {
@@ -111,6 +173,16 @@ impl MacroPadApp {
 impl eframe::App for MacroPadApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         self.apply_theme(ctx);
+
+        // Process profile switch event from background hotkey listener
+        while let Ok(new_idx) = self.event_receiver.try_recv() {
+            let mut mgr = self.profile_mgr.lock().unwrap();
+            mgr.active_index = new_idx as usize;
+            let active_name = mgr.active_profile().name.clone();
+            self.status_message = format!("¡Perfil cambiado con Tecla 6 a '{}'!", active_name);
+            self.status_success = true;
+            ctx.request_repaint();
+        }
 
         // TOP HEADER
         egui::TopBottomPanel::top("header_panel")
@@ -242,14 +314,19 @@ impl eframe::App for MacroPadApp {
                             let r = (self.selected_color[0] * 255.0) as u8;
                             let g = (self.selected_color[1] * 255.0) as u8;
                             let b = (self.selected_color[2] * 255.0) as u8;
-                            let active_p = &mut self.profile_mgr.profiles[self.profile_mgr.active_index];
-                            for k in 0..6 {
-                                active_p.key_colors.insert(k.to_string(), (r, g, b));
+                            {
+                                let mut mgr = self.profile_mgr.lock().unwrap();
+                                let idx = mgr.active_index;
+                                let active_p = &mut mgr.profiles[idx];
+                                for k in 0..6 {
+                                    active_p.key_colors.insert(k.to_string(), (r, g, b));
+                                }
+                                for k in 16..19 {
+                                    active_p.key_colors.insert(k.to_string(), (r, g, b));
+                                }
+                                active_p.theme_color = (r, g, b);
+                                mgr.save();
                             }
-                            for k in 16..19 {
-                                active_p.key_colors.insert(k.to_string(), (r, g, b));
-                            }
-                            self.profile_mgr.save();
                             self.sync_to_hardware();
                         }
                     });
@@ -260,28 +337,45 @@ impl eframe::App for MacroPadApp {
                         ui.horizontal(|ui| {
                             ui.label(egui::RichText::new("Perfil Activo:").strong().size(14.0));
 
-                            let active_name = self.profile_mgr.active_profile().name.clone();
+                            let (active_name, total_profiles, current_idx) = {
+                                let mgr = self.profile_mgr.lock().unwrap();
+                                (mgr.active_profile().name.clone(), mgr.profiles.len(), mgr.active_index)
+                            };
+
+                            let mut changed_profile_idx: Option<usize> = None;
+
                             egui::ComboBox::from_id_salt("profile_combo")
                                 .selected_text(egui::RichText::new(&active_name).color(COLOR_MENA_GREEN).strong())
                                 .show_ui(ui, |ui| {
-                                    for i in 0..self.profile_mgr.profiles.len() {
-                                        let name = self.profile_mgr.profiles[i].name.clone();
-                                        if ui.selectable_label(self.profile_mgr.active_index == i, name).clicked() {
-                                            self.profile_mgr.active_index = i;
-                                            self.profile_mgr.save();
-                                            self.sync_to_hardware();
+                                    let mgr = self.profile_mgr.lock().unwrap();
+                                    for i in 0..mgr.profiles.len() {
+                                        let name = mgr.profiles[i].name.clone();
+                                        if ui.selectable_label(current_idx == i, name).clicked() {
+                                            changed_profile_idx = Some(i);
                                         }
                                     }
                                 });
+
+                            if let Some(new_i) = changed_profile_idx {
+                                {
+                                    let mut mgr = self.profile_mgr.lock().unwrap();
+                                    mgr.active_index = new_i;
+                                    mgr.save();
+                                }
+                                self.sync_to_hardware();
+                            }
 
                             if ui.button("+ Nuevo").clicked() {
                                 self.show_new_profile_dialog = true;
                                 self.new_profile_name = "Nuevo Perfil".to_string();
                             }
 
-                            if self.profile_mgr.profiles.len() > 1 {
+                            if total_profiles > 1 {
                                 if ui.button(egui::RichText::new("🗑 Eliminar").color(Color32::from_rgb(255, 87, 87))).clicked() {
-                                    self.profile_mgr.delete_active_profile();
+                                    {
+                                        let mut mgr = self.profile_mgr.lock().unwrap();
+                                        mgr.delete_active_profile();
+                                    }
                                     self.sync_to_hardware();
                                 }
                             }
@@ -307,8 +401,13 @@ impl eframe::App for MacroPadApp {
 
                                 // Action selection
                                 ui.label(egui::RichText::new("Asignar Acción:").size(12.0));
-                                let current_binding = self.profile_mgr.active_profile().key_bindings.get(&self.selected_key_idx.to_string()).cloned();
-                                let current_desc = current_binding.as_ref().map(|b| b.label.as_str()).unwrap_or("Sin asignar");
+                                let current_desc = {
+                                    let mgr = self.profile_mgr.lock().unwrap();
+                                    mgr.active_profile().key_bindings
+                                        .get(&self.selected_key_idx.to_string())
+                                        .map(|b| b.label.clone())
+                                        .unwrap_or_else(|| "Sin asignar".to_string())
+                                };
 
                                 ui.label(egui::RichText::new(format!("Actual: {current_desc}")).color(Color32::WHITE).strong());
                                 ui.add_space(4.0);
@@ -354,9 +453,12 @@ impl eframe::App for MacroPadApp {
                                         let r = (self.selected_color[0] * 255.0) as u8;
                                         let g = (self.selected_color[1] * 255.0) as u8;
                                         let b = (self.selected_color[2] * 255.0) as u8;
-                                        let p = &mut self.profile_mgr.profiles[self.profile_mgr.active_index];
-                                        p.key_colors.insert(self.selected_key_idx.to_string(), (r, g, b));
-                                        self.profile_mgr.save();
+                                        {
+                                            let mut mgr = self.profile_mgr.lock().unwrap();
+                                            let idx = mgr.active_index;
+                                            mgr.profiles[idx].key_colors.insert(self.selected_key_idx.to_string(), (r, g, b));
+                                            mgr.save();
+                                        }
                                     }
 
                                     // Quick Color Swatches
@@ -374,9 +476,12 @@ impl eframe::App for MacroPadApp {
                                         let c = Color32::from_rgb(r, g, b);
                                         if ui.add(egui::Button::new(" ").fill(c).min_size(Vec2::splat(18.0))).clicked() {
                                             self.selected_color = [r as f32 / 255.0, g as f32 / 255.0, b as f32 / 255.0];
-                                            let p = &mut self.profile_mgr.profiles[self.profile_mgr.active_index];
-                                            p.key_colors.insert(self.selected_key_idx.to_string(), (r, g, b));
-                                            self.profile_mgr.save();
+                                            {
+                                                let mut mgr = self.profile_mgr.lock().unwrap();
+                                                let idx = mgr.active_index;
+                                                mgr.profiles[idx].key_colors.insert(self.selected_key_idx.to_string(), (r, g, b));
+                                                mgr.save();
+                                            }
                                         }
                                     }
                                 });
@@ -413,7 +518,10 @@ impl eframe::App for MacroPadApp {
                             ui.horizontal(|ui| {
                                 if ui.button("Crear").clicked() {
                                     if !self.new_profile_name.trim().is_empty() {
-                                        self.profile_mgr.create_profile(&self.new_profile_name, (0, 255, 136));
+                                        {
+                                            let mut mgr = self.profile_mgr.lock().unwrap();
+                                            mgr.create_profile(&self.new_profile_name, (0, 255, 136));
+                                        }
                                         self.show_new_profile_dialog = false;
                                         self.sync_to_hardware();
                                     }
@@ -431,19 +539,23 @@ impl eframe::App for MacroPadApp {
 impl MacroPadApp {
     fn render_key_button(&mut self, ui: &mut egui::Ui, idx: u8) {
         let is_selected = self.selected_key_idx == idx;
-        let p = self.profile_mgr.active_profile();
-        let (r, g, b) = p.key_colors.get(&idx.to_string()).cloned().unwrap_or(p.theme_color);
-        let key_color = Color32::from_rgb(r, g, b);
-
-        let binding_label = p.key_bindings.get(&idx.to_string())
-            .map(|k| k.label.as_str())
-            .unwrap_or("Sin asignar");
+        let (key_color, binding_label) = {
+            let mgr = self.profile_mgr.lock().unwrap();
+            let p = mgr.active_profile();
+            let (r, g, b) = p.key_colors.get(&idx.to_string()).cloned().unwrap_or(p.theme_color);
+            let label = p.key_bindings.get(&idx.to_string())
+                .map(|k| k.label.clone())
+                .unwrap_or_else(|| "Sin asignar".to_string());
+            (Color32::from_rgb(r, g, b), label)
+        };
 
         let size = Vec2::new(95.0, 72.0);
         let (rect, response) = ui.allocate_exact_size(size, egui::Sense::click());
 
         if response.clicked() {
             self.selected_key_idx = idx;
+            let mgr = self.profile_mgr.lock().unwrap();
+            let (r, g, b) = mgr.active_profile().key_colors.get(&idx.to_string()).cloned().unwrap_or(mgr.active_profile().theme_color);
             self.selected_color = [r as f32 / 255.0, g as f32 / 255.0, b as f32 / 255.0];
         }
 
@@ -489,15 +601,20 @@ impl MacroPadApp {
 
     fn render_knob_button(&mut self, ui: &mut egui::Ui, idx: u8) {
         let is_selected = self.selected_key_idx == idx;
-        let p = self.profile_mgr.active_profile();
-        let (r, g, b) = p.key_colors.get(&idx.to_string()).cloned().unwrap_or(p.theme_color);
-        let knob_color = Color32::from_rgb(r, g, b);
+        let knob_color = {
+            let mgr = self.profile_mgr.lock().unwrap();
+            let p = mgr.active_profile();
+            let (r, g, b) = p.key_colors.get(&idx.to_string()).cloned().unwrap_or(p.theme_color);
+            Color32::from_rgb(r, g, b)
+        };
 
         let size = Vec2::new(65.0, 65.0);
         let (rect, response) = ui.allocate_exact_size(size, egui::Sense::click());
 
         if response.clicked() {
             self.selected_key_idx = idx;
+            let mgr = self.profile_mgr.lock().unwrap();
+            let (r, g, b) = mgr.active_profile().key_colors.get(&idx.to_string()).cloned().unwrap_or(mgr.active_profile().theme_color);
             self.selected_color = [r as f32 / 255.0, g as f32 / 255.0, b as f32 / 255.0];
         }
 
@@ -518,16 +635,20 @@ impl MacroPadApp {
     }
 
     fn set_key_action(&mut self, idx: u8, type_id: u8, code1: u8, code2: u8, code3: u8, label: &str, is_profile_switch: bool) {
-        let p = &mut self.profile_mgr.profiles[self.profile_mgr.active_index];
-        p.key_bindings.insert(idx.to_string(), KeyConfig {
-            type_id,
-            code1,
-            code2,
-            code3,
-            label: label.to_string(),
-            is_profile_switch,
-        });
-        self.profile_mgr.save();
+        {
+            let mut mgr = self.profile_mgr.lock().unwrap();
+            let current_idx = mgr.active_index;
+            let p = &mut mgr.profiles[current_idx];
+            p.key_bindings.insert(idx.to_string(), KeyConfig {
+                type_id,
+                code1,
+                code2,
+                code3,
+                label: label.to_string(),
+                is_profile_switch,
+            });
+            mgr.save();
+        }
         self.status_message = format!("Acción asignada a Tecla {}: {label}", idx + 1);
         self.status_success = true;
     }

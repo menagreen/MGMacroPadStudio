@@ -115,9 +115,13 @@ impl SdcxDevice {
     }
 
     pub fn set_all_key_colors(&self, colors: &HashMap<u8, (u8, u8, u8)>) -> Result<(), String> {
-        self.set_light_config(5, 4, 2)?;
+        // Ensure Light Mode 5 (Custom Per-Key RGB) is active with full brightness
+        let _ = self.set_light_config(5, 4, 2);
+        std::thread::sleep(std::time::Duration::from_millis(15));
+
         for (&idx, &(r, g, b)) in colors {
             let _ = self.set_key_color(idx, r, g, b);
+            std::thread::sleep(std::time::Duration::from_millis(8));
         }
         Ok(())
     }

@@ -263,29 +263,30 @@ impl ProfileManager {
 
     pub fn apply_to_hardware(&self, dev: &SdcxDevice) -> Result<(), String> {
         let p = self.active_profile();
-        println!("[+] Aplicando perfil '{}' al hardware...", p.name);
+        println!("[+] Aplicando perfil '{}' al hardware físico...", p.name);
 
-        // 1. Write key bindings
+        // 1. Write key bindings with safe 8ms delay between packets
         for (k_str, cfg) in &p.key_bindings {
             if let Ok(idx) = k_str.parse::<u8>() {
-                dev.set_key_binding(idx, cfg.type_id, cfg.code1, cfg.code2, cfg.code3)?;
+                let _ = dev.set_key_binding(idx, cfg.type_id, cfg.code1, cfg.code2, cfg.code3);
+                std::thread::sleep(std::time::Duration::from_millis(8));
             }
         }
 
-        // 2. Write RGB colors
-        if p.light_mode == 5 {
-            let mut colors = HashMap::new();
-            for (k_str, &rgb) in &p.key_colors {
-                if let Ok(idx) = k_str.parse::<u8>() {
-                    colors.insert(idx, rgb);
-                }
-            }
-            dev.set_all_key_colors(&colors)?;
-        } else {
-            dev.set_light_config(p.light_mode, p.light_brightness, p.light_speed)?;
+        // 2. Write RGB colors (ensuring all 6 keys and knob get colored)
+        let mut colors = HashMap::new();
+        for i in 0..6 {
+            let col = p.key_colors.get(&i.to_string()).copied().unwrap_or(p.theme_color);
+            colors.insert(i, col);
+        }
+        for i in 16..19 {
+            let col = p.key_colors.get(&i.to_string()).copied().unwrap_or(p.theme_color);
+            colors.insert(i, col);
         }
 
-        println!("[+] Perfil '{}' aplicado exitosamente al hardware.", p.name);
+        dev.set_all_key_colors(&colors)?;
+
+        println!("[✓] Perfil '{}' y colores RGB aplicados exitosamente.", p.name);
         Ok(())
     }
 }

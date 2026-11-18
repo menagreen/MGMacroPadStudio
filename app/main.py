@@ -9,7 +9,6 @@ import time
 from app.hid.discovery import HidDiscovery
 from app.hid.transport import HidTransport
 from app.hid.protocol import SdcxProtocol
-from app.diagnostics.event_monitor import WindowsInputMonitor, InputEvent
 
 
 def setup_logging(verbose: bool = False):
@@ -83,27 +82,11 @@ def run_cli_diagnostic():
     finally:
         transport.close()
 
-    print("\n" + "-" * 65)
-    print(" Monitor de eventos en tiempo real activo.")
-    print(" Presiona teclas o gira la perilla en el macropad para observar.")
-    print(" Presiona Ctrl+C en cualquier momento para salir.")
-    print("-" * 65 + "\n")
-
-    def on_event(evt: InputEvent):
-        timestamp = time.strftime("%H:%M:%S")
-        print(f"[{timestamp}] Evento: {evt.event_type:10s} | {evt.key_name:20s} | {evt.details}")
-
-    monitor = WindowsInputMonitor(callback=on_event)
-    monitor.start()
-
-    try:
-        while True:
-            time.sleep(0.5)
-    except KeyboardInterrupt:
-        print("\n[+] Deteniendo monitor...")
-    finally:
-        monitor.stop()
-
+    print("\n" + "=" * 65)
+    print(" Inspección completada exitosamente.")
+    print(" Para usar la interfaz gráfica completa y el monitor interactivo:")
+    print("     python -m app.main")
+    print("=" * 65 + "\n")
     return 0
 
 

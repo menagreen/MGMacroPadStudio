@@ -40,7 +40,7 @@ from app.hid.protocol import (
     TYPE_DISABLED,
     LIGHT_MODES,
 )
-from app.diagnostics.event_monitor import WindowsInputMonitor, InputEvent
+from app.diagnostics.event_monitor import SafeInputEventFilter, InputEvent
 
 logger = logging.getLogger(__name__)
 
@@ -202,14 +202,16 @@ class DiagnosticWindow(QMainWindow):
         self.bridge = EventBridge()
         self.bridge.event_received.connect(self._on_input_event)
 
-        self.input_monitor = WindowsInputMonitor(callback=self.bridge.event_received.emit)
+        # Non-blocking application event filter - does NOT touch Windows hook chain or primary keyboard
+        self.event_filter = SafeInputEventFilter(callback=self.bridge.event_received.emit)
+        QApplication.instance().installEventFilter(self.event_filter)
+
         self.key_buttons: Dict[int, QPushButton] = {}
         self.knob_button: Optional[QPushButton] = None
         self.selected_key_index: int = 0
         self.current_bindings: List[KeyBinding] = []
 
         self._init_ui()
-        self.input_monitor.start()
 
         self.refresh_timer = QTimer(self)
         self.refresh_timer.timeout.connect(self.scan_and_inspect)
@@ -218,7 +220,9 @@ class DiagnosticWindow(QMainWindow):
         QTimer.singleShot(150, self.scan_and_inspect)
 
     def closeEvent(self, event):
-        self.input_monitor.stop()
+        app = QApplication.instance()
+        if app and hasattr(self, "event_filter"):
+            app.removeEventFilter(self.event_filter)
         self.transport.close()
         super().closeEvent(event)
 
@@ -499,34 +503,22 @@ class DiagnosticWindow(QMainWindow):
         """Handle incoming input events and highlight individual keys."""
         self.log_message(f"ENTRADA: {evt.event_type:10s} | {evt.key_name:20s} | {evt.details}")
 
-        # Check for specific numbers '1'..'6'
-        vk = evt.vk_code
-        if ord('1') <= vk <= ord('6'):
-            idx = vk - ord('1')
-            if idx in self.key_buttons:
-                btn = self.key_buttons[idx]
-                btn.setStyleSheet("background-color: #00ADB5; color: #FFFFFF; border: 2px solid #FFFFFF;")
-                QTimer.singleShot(250, lambda b=btn: b.setStyleSheet(""))
-                self.control_detail.setText(f"<font color='#00ADB5'><b>¡Tecla Física {idx+1} Pulsada!</b> Reporte: '{chr(vk)}'</font>")
-                return
-
-        # Check for F13..F18
-        if 0x7C <= vk <= 0x81:  # VK_F13 to VK_F18
-            idx = vk - 0x7C
-            if idx in self.key_buttons:
-                btn = self.key_buttons[idx]
-                btn.setStyleSheet("background-color: #00ADB5; color: #FFFFFF; border: 2px solid #FFFFFF;")
-                QTimer.singleShot(250, lambda b=btn: b.setStyleSheet(""))
-                self.control_detail.setText(f"<font color='#00ADB5'><b>¡Tecla Física {idx+1} Pulsada!</b> Reporte: F{13+idx}</font>")
+        # Check for Key 1..6
+        for i in range(6):
+            if f"Key {i+1}" in evt.key_name:
+                if i in self.key_buttons:
+                    btn = self.key_buttons[i]
+                    btn.setStyleSheet("background-color: #00ADB5; color: #FFFFFF; border: 2px solid #FFFFFF;")
+                    QTimer.singleShot(250, lambda b=btn: b.setStyleSheet(""))
+                    self.control_detail.setText(f"<font color='#00ADB5'><b>¡Tecla Física {i+1} Pulsada!</b> Reporte: '{evt.key_name}'</font>")
                 return
 
         # Check knob
-        if evt.vk_code in (0xAD, 0xAE, 0xAF):
-            action = "Mute" if evt.vk_code == 0xAD else ("Vol +" if evt.vk_code == 0xAF else "Vol -")
+        if "Knob" in evt.key_name:
             if self.knob_button:
                 self.knob_button.setStyleSheet("background-color: #FF5722; color: #FFFFFF; border: 3px solid #FFFFFF;")
                 QTimer.singleShot(250, lambda: self.knob_button.setStyleSheet(""))
-                self.control_detail.setText(f"<font color='#FF5722'><b>¡Perilla Detectada!</b> Acción: {action}</font>")
+                self.control_detail.setText(f"<font color='#FF5722'><b>¡Perilla Detectada!</b> Acción: {evt.key_name}</font>")
                 return
 
         # Fallback for Ctrl + A

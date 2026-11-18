@@ -4,8 +4,8 @@
 
 use crate::autostart::AutostartManager;
 use crate::hotkeys::{HOTKEY_F24, VK_F24};
-use crate::profiles::{KeyConfig, ProfileManager};
-use crate::protocol::SdcxDevice;
+use crate::profiles::{KeyConfig, PadLayout, ProfileManager};
+use crate::protocol::{SdcxDevice, KNOWN_DEVICES};
 use eframe::egui::{self, Color32, Rect, Rounding, Stroke, Vec2};
 use std::sync::{mpsc, Arc, Mutex};
 use windows_sys::Win32::UI::Input::KeyboardAndMouse::{RegisterHotKey, UnregisterHotKey, MOD_NOREPEAT};
@@ -30,9 +30,12 @@ pub struct MacroPadApp {
     status_message: String,
     status_success: bool,
 
-    // Dialog state for new profile
+    // Dialog state for new profile & compatibility
     show_new_profile_dialog: bool,
     new_profile_name: String,
+    show_compat_dialog: bool,
+    custom_vid_str: String,
+    custom_pid_str: String,
 
     // Event receiver from background hotkey listener
     event_receiver: mpsc::Receiver<u32>,
@@ -119,6 +122,9 @@ impl MacroPadApp {
             status_success: true,
             show_new_profile_dialog: false,
             new_profile_name: String::new(),
+            show_compat_dialog: false,
+            custom_vid_str: "6D80".to_string(),
+            custom_pid_str: "DC81".to_string(),
             event_receiver: rx,
         }
     }
@@ -217,6 +223,10 @@ impl eframe::App for MacroPadApp {
 
                         ui.separator();
 
+                        if ui.button(egui::RichText::new("⚙ Dispositivos").size(12.0)).clicked() {
+                            self.show_compat_dialog = true;
+                        }
+
                         // Device Badge
                         if self.device_connected {
                             ui.label(
@@ -255,59 +265,85 @@ impl eframe::App for MacroPadApp {
             .frame(egui::Frame::none().fill(COLOR_BG_OBSIDIAN).inner_margin(egui::Margin::same(16.0)))
             .show(ctx, |ui| {
                 ui.columns(2, |columns| {
-                    // LEFT COLUMN: Visual Macropad (6 Keys + 1 Knob)
+                    // LEFT COLUMN: Visual Macropad (Dynamic Layout)
                     columns[0].vertical(|ui| {
-                        ui.label(egui::RichText::new("PAD FÍSICO (Haz clic para seleccionar tecla)").color(Color32::from_rgb(180, 195, 215)).strong().size(13.0));
-                        ui.add_space(8.0);
+                        ui.horizontal(|ui| {
+                            ui.label(egui::RichText::new("PAD FÍSICO").color(Color32::from_rgb(180, 195, 215)).strong().size(13.0));
+                            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                                let current_layout = {
+                                    let mgr = self.profile_mgr.lock().unwrap();
+                                    mgr.active_profile().layout
+                                };
+                                let mut changed_layout: Option<PadLayout> = None;
+                                egui::ComboBox::from_id_salt("layout_select")
+                                    .selected_text(egui::RichText::new(current_layout.name()).color(COLOR_CYAN).size(12.0))
+                                    .show_ui(ui, |ui| {
+                                        for &l in PadLayout::ALL {
+                                            if ui.selectable_label(current_layout == l, l.name()).clicked() {
+                                                changed_layout = Some(l);
+                                            }
+                                        }
+                                    });
+                                if let Some(new_l) = changed_layout {
+                                    let mut mgr = self.profile_mgr.lock().unwrap();
+                                    let idx = mgr.active_index;
+                                    mgr.profiles[idx].layout = new_l;
+                                    mgr.save();
+                                }
+                            });
+                        });
+                        ui.add_space(6.0);
 
                         // Pad Container Card
+                        let (rows, cols, knob_count, key_w) = {
+                            let mgr = self.profile_mgr.lock().unwrap();
+                            let l = mgr.active_profile().layout;
+                            let w = if l.cols() == 4 { 74.0 } else { 92.0 };
+                            (l.rows(), l.cols(), l.knob_count(), w)
+                        };
+
                         egui::Frame::none()
                             .fill(COLOR_PANEL_BG)
                             .rounding(Rounding::same(12.0))
                             .stroke(Stroke::new(1.0_f32, Color32::from_rgb(34, 44, 62)))
-                            .inner_margin(egui::Margin::same(18.0))
+                            .inner_margin(egui::Margin::same(14.0))
                             .show(ui, |ui| {
                                 ui.vertical_centered(|ui| {
-                                    // Row 1: Keys 1, 2, 3
-                                    ui.horizontal(|ui| {
-                                        ui.add_space(10.0);
-                                        for idx in 0..3 {
-                                            self.render_key_button(ui, idx);
-                                            ui.add_space(12.0);
-                                        }
-                                    });
-
-                                    ui.add_space(12.0);
-
-                                    // Row 2: Keys 4, 5, 6
-                                    ui.horizontal(|ui| {
-                                        ui.add_space(10.0);
-                                        for idx in 3..6 {
-                                            self.render_key_button(ui, idx);
-                                            ui.add_space(12.0);
-                                        }
-                                    });
-
-                                    ui.add_space(20.0);
-                                    ui.separator();
-                                    ui.add_space(10.0);
-
-                                    // Rotary Knob
-                                    ui.horizontal(|ui| {
-                                        ui.add_space(20.0);
-                                        self.render_knob_button(ui, 16);
-                                        ui.add_space(15.0);
-                                        ui.vertical(|ui| {
-                                            ui.label(egui::RichText::new("Perilla Rotativa").strong().size(13.0));
-                                            ui.label(egui::RichText::new("• Giro Horario: Volumen +").color(Color32::from_rgb(160, 175, 195)).size(11.0));
-                                            ui.label(egui::RichText::new("• Giro Antihorario: Volumen -").color(Color32::from_rgb(160, 175, 195)).size(11.0));
-                                            ui.label(egui::RichText::new("• Pulsación: Silenciar Mic/Audio").color(COLOR_CYAN).size(11.0));
+                                    for r in 0..rows {
+                                        ui.horizontal(|ui| {
+                                            ui.add_space(4.0);
+                                            for c in 0..cols {
+                                                let key_idx = (r * cols + c) as u8;
+                                                self.render_key_button_sized(ui, key_idx, key_w);
+                                                ui.add_space(6.0);
+                                            }
                                         });
-                                    });
+                                        ui.add_space(6.0);
+                                    }
+
+                                    if knob_count > 0 {
+                                        ui.add_space(8.0);
+                                        ui.separator();
+                                        ui.add_space(6.0);
+
+                                        ui.horizontal(|ui| {
+                                            ui.add_space(15.0);
+                                            for k in 0..knob_count {
+                                                let knob_idx = if k == 0 { 16 } else { 19 };
+                                                self.render_knob_button(ui, knob_idx);
+                                                ui.add_space(10.0);
+                                            }
+                                            ui.vertical(|ui| {
+                                                let text = if knob_count == 1 { "Perilla Rotativa" } else { "Perillas Rotativas (1 y 2)" };
+                                                ui.label(egui::RichText::new(text).strong().size(12.0));
+                                                ui.label(egui::RichText::new("Giro Horario/Antihorario y Pulsación").color(Color32::from_rgb(160, 175, 195)).size(11.0));
+                                            });
+                                        });
+                                    }
                                 });
                             });
 
-                        ui.add_space(12.0);
+                        ui.add_space(10.0);
 
                         // Quick Flood Fill button
                         if ui.add(egui::Button::new(egui::RichText::new("✨ Pintar Todo el Pad con este Color").strong().color(Color32::BLACK)).fill(COLOR_MENA_GREEN)).clicked() {
@@ -532,12 +568,78 @@ impl eframe::App for MacroPadApp {
                             });
                         });
                 }
+
+                // Compatibility / Device Filter Modal Dialog
+                if self.show_compat_dialog {
+                    egui::Window::new("⚙ Compatibilidad de Dispositivos USB")
+                        .collapsible(false)
+                        .resizable(false)
+                        .anchor(egui::Align2::CENTER_CENTER, Vec2::ZERO)
+                        .show(ctx, |ui| {
+                            ui.heading(egui::RichText::new("Dispositivos Compatibles").size(14.0).color(COLOR_MENA_GREEN));
+                            ui.label("Modelos soportados automáticamente (SDCX, Chant, STM32, PCsensor):");
+                            ui.add_space(4.0);
+
+                            egui::ScrollArea::vertical().max_height(140.0).show(ui, |ui| {
+                                for m in KNOWN_DEVICES {
+                                    ui.horizontal(|ui| {
+                                        ui.label(egui::RichText::new(format!("• {}", m.name)).strong().size(12.0));
+                                        ui.label(egui::RichText::new(format!("(VID: 0x{:04X} PID: 0x{:04X})", m.vid, m.pid)).color(Color32::from_rgb(140, 155, 180)).size(11.0));
+                                    });
+                                }
+                            });
+
+                            ui.add_space(8.0);
+                            ui.separator();
+                            ui.add_space(6.0);
+
+                            ui.label(egui::RichText::new("Filtro Manual / Override (Hex):").strong());
+                            ui.horizontal(|ui| {
+                                ui.label("VID:");
+                                ui.text_edit_singleline(&mut self.custom_vid_str);
+                                ui.label("PID:");
+                                ui.text_edit_singleline(&mut self.custom_pid_str);
+                            });
+
+                            ui.add_space(10.0);
+                            ui.horizontal(|ui| {
+                                if ui.add(egui::Button::new(egui::RichText::new("🔄 Re-Escanear y Conectar").strong().color(Color32::BLACK)).fill(COLOR_MENA_GREEN)).clicked() {
+                                    let vid = u16::from_str_radix(self.custom_vid_str.trim().trim_start_matches("0x"), 16).ok();
+                                    let pid = u16::from_str_radix(self.custom_pid_str.trim().trim_start_matches("0x"), 16).ok();
+
+                                    let res = SdcxDevice::open_with_filter(vid, pid);
+                                    match res {
+                                        Ok(dev) => {
+                                            let name = dev.matched_name.clone();
+                                            *self.device.lock().unwrap() = Some(dev);
+                                            self.device_connected = true;
+                                            self.device_status = format!("Conectado: {name}");
+                                            self.status_message = format!("¡Dispositivo conectado: {name}!");
+                                            self.status_success = true;
+                                            self.show_compat_dialog = false;
+                                            self.sync_to_hardware();
+                                        }
+                                        Err(e) => {
+                                            self.device_connected = false;
+                                            self.device_status = format!("Error: {e}");
+                                            self.status_message = format!("Error de conexión: {e}");
+                                            self.status_success = false;
+                                        }
+                                    }
+                                }
+
+                                if ui.button("Cerrar").clicked() {
+                                    self.show_compat_dialog = false;
+                                }
+                            });
+                        });
+                }
             });
     }
 }
 
 impl MacroPadApp {
-    fn render_key_button(&mut self, ui: &mut egui::Ui, idx: u8) {
+    fn render_key_button_sized(&mut self, ui: &mut egui::Ui, idx: u8, key_w: f32) {
         let is_selected = self.selected_key_idx == idx;
         let (key_color, binding_label) = {
             let mgr = self.profile_mgr.lock().unwrap();
@@ -549,7 +651,7 @@ impl MacroPadApp {
             (Color32::from_rgb(r, g, b), label)
         };
 
-        let size = Vec2::new(95.0, 72.0);
+        let size = Vec2::new(key_w, 66.0);
         let (rect, response) = ui.allocate_exact_size(size, egui::Sense::click());
 
         if response.clicked() {
@@ -575,13 +677,14 @@ impl MacroPadApp {
             rect.center_top() + Vec2::new(0.0, 10.0),
             egui::Align2::CENTER_CENTER,
             format!("KEY {}", idx + 1),
-            egui::FontId::proportional(12.0),
+            egui::FontId::proportional(11.0),
             Color32::WHITE,
         );
 
         // Binding text (truncated)
-        let short_label = if binding_label.len() > 14 {
-            format!("{}...", &binding_label[..12])
+        let max_len = if key_w < 82.0 { 10 } else { 14 };
+        let short_label = if binding_label.len() > max_len {
+            format!("{}...", &binding_label[..max_len - 2])
         } else {
             binding_label.to_string()
         };
@@ -590,12 +693,12 @@ impl MacroPadApp {
             rect.center() + Vec2::new(0.0, 5.0),
             egui::Align2::CENTER_CENTER,
             short_label,
-            egui::FontId::proportional(10.0),
+            egui::FontId::proportional(9.5),
             Color32::from_rgb(170, 185, 205),
         );
 
         // Color indicator pill at bottom
-        let pill_rect = Rect::from_center_size(rect.center_bottom() - Vec2::new(0.0, 8.0), Vec2::new(32.0, 4.0));
+        let pill_rect = Rect::from_center_size(rect.center_bottom() - Vec2::new(0.0, 7.0), Vec2::new(28.0, 3.5));
         painter.rect_filled(pill_rect, Rounding::same(2.0), key_color);
     }
 

@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 use crate::protocol::SdcxDevice;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -16,12 +17,89 @@ pub struct KeyConfig {
     pub is_profile_switch: bool,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum PadLayout {
+    Layout1x3,
+    Layout2x3,
+    Layout3x3,
+    Layout3x4,
+    Layout4x4,
+}
+
+impl Default for PadLayout {
+    fn default() -> Self {
+        PadLayout::Layout2x3
+    }
+}
+
+impl PadLayout {
+    pub const ALL: &[PadLayout] = &[
+        PadLayout::Layout1x3,
+        PadLayout::Layout2x3,
+        PadLayout::Layout3x3,
+        PadLayout::Layout3x4,
+        PadLayout::Layout4x4,
+    ];
+
+    pub fn name(&self) -> &'static str {
+        match self {
+            PadLayout::Layout1x3 => "3 Teclas (1x3) + 1 Perilla",
+            PadLayout::Layout2x3 => "6 Teclas (2x3) + 1 Perilla",
+            PadLayout::Layout3x3 => "9 Teclas (3x3) + 2 Perillas",
+            PadLayout::Layout3x4 => "12 Teclas (3x4) + 2 Perillas",
+            PadLayout::Layout4x4 => "16 Teclas (4x4)",
+        }
+    }
+
+    pub fn key_count(&self) -> usize {
+        match self {
+            PadLayout::Layout1x3 => 3,
+            PadLayout::Layout2x3 => 6,
+            PadLayout::Layout3x3 => 9,
+            PadLayout::Layout3x4 => 12,
+            PadLayout::Layout4x4 => 16,
+        }
+    }
+
+    pub fn rows(&self) -> usize {
+        match self {
+            PadLayout::Layout1x3 => 1,
+            PadLayout::Layout2x3 => 2,
+            PadLayout::Layout3x3 => 3,
+            PadLayout::Layout3x4 => 3,
+            PadLayout::Layout4x4 => 4,
+        }
+    }
+
+    pub fn cols(&self) -> usize {
+        match self {
+            PadLayout::Layout1x3 => 3,
+            PadLayout::Layout2x3 => 3,
+            PadLayout::Layout3x3 => 3,
+            PadLayout::Layout3x4 => 4,
+            PadLayout::Layout4x4 => 4,
+        }
+    }
+
+    pub fn knob_count(&self) -> usize {
+        match self {
+            PadLayout::Layout1x3 => 1,
+            PadLayout::Layout2x3 => 1,
+            PadLayout::Layout3x3 => 2,
+            PadLayout::Layout3x4 => 2,
+            PadLayout::Layout4x4 => 0,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Profile {
     pub id: String,
     pub name: String,
     #[serde(default)]
     pub description: String,
+    #[serde(default)]
+    pub layout: PadLayout,
     pub theme_color: (u8, u8, u8),
     #[serde(default = "default_mode")]
     pub light_mode: u8,
@@ -116,6 +194,7 @@ impl ProfileManager {
             id: "general".to_string(),
             name: "General / Productividad".to_string(),
             description: "Perfil General".to_string(),
+            layout: PadLayout::Layout2x3,
             theme_color: (0, 173, 181),
             light_mode: 5,
             light_brightness: 4,
@@ -141,6 +220,7 @@ impl ProfileManager {
             id: "obs_stream".to_string(),
             name: "Streaming / OBS".to_string(),
             description: "Perfil OBS F13-F18".to_string(),
+            layout: PadLayout::Layout2x3,
             theme_color: (155, 93, 229),
             light_mode: 5,
             light_brightness: 4,
@@ -157,6 +237,7 @@ impl ProfileManager {
             id: "multimedia".to_string(),
             name: "Multimedia".to_string(),
             description: "Perfil Multimedia".to_string(),
+            layout: PadLayout::Layout2x3,
             theme_color: (255, 87, 34),
             light_mode: 5,
             light_brightness: 4,
@@ -235,6 +316,7 @@ impl ProfileManager {
             id,
             name: name.to_string(),
             description: format!("Perfil {}", name),
+            layout: PadLayout::Layout2x3,
             theme_color,
             light_mode: 5,
             light_brightness: 4,

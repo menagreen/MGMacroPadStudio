@@ -24,7 +24,9 @@
   - **Interactive GUI:** GPU-accelerated dark cyber interface built with `egui` to tweak lighting, bindings, and profiles.
   - **Background Daemon (`--service`):** Invisible background listener for global hotkeys (F13–F18, OBS scenes, F24 profile cycling) that works while gaming or with windows minimized.
 - **Per-Key RGB Lighting:** Individual color picker, quick color presets (MenaGreen, Cyan, OBS Violet, Orange, Red, Blue), and batch fill.
-- **Hardware Profile Cycling:** Map Key 6 to cycle profiles on hardware with instant LED theme changes.
+- **Hardware Profile Cycling:** Map Key 6 to cycle profiles on hardware with instant LED theme changes and active GUI sync.
+- **Multi-Device Compatibility:** Built-in auto-detection for SDCX devices (3, 6, 9, 12, 16 keys), Chant, STM32 clones, PCsensor, and a manual Hex VID/PID override scanner.
+- **Configurable Key Layouts:** Dynamic visual matrix supporting 1x3 + 1 Knob, 2x3 + 1 Knob, 3x3 + 2 Knobs, 3x4 + 2 Knobs, and 4x4 pads.
 - **OBS Studio Friendly:** Dedicated shortcuts (`F13`–`F18`) to toggle mute, switch scenes, and control recordings without conflicting with typing keyboards.
 - **Windows Autostart:** One-click toggle in the UI or via PowerShell script to run silently on user login (`HKCU Run`).
 
@@ -66,7 +68,9 @@ The optimized executable will be located at `target/release/macropad-studio.exe`
   - **Configurador Visual:** Interfaz moderna estilo obsidiana/acrílico acelerada por GPU (`egui`) para personalizar colores, atajos y perfiles.
   - **Daemon de Fondo (`--service`):** Escucha atajos globales en segundo plano (`F13` a `F18`, cambio de escenas de OBS y `F24` para alternar perfiles) funcionando en juegos a pantalla completa o con ventanas minimizadas.
 - **Iluminación RGB por Tecla:** Selector libre de color RGB, paleta con presets rápidos (MenaGreen, Cyan, OBS Violeta, etc.) y botón para pintar todo el pad.
-- **Cambio de Perfil por Hardware:** Tecla 6 configurada para rotar perfiles en la memoria física con cambio de color instantáneo.
+- **Cambio de Perfil por Hardware:** Tecla 6 configurada para rotar perfiles en la memoria física con cambio de color instantáneo y sincronización activa en la interfaz.
+- **Amplia Compatibilidad de Dispositivos:** Detección automática para modelos SDCX (3, 6, 9, 12 y 16 teclas), teclados Chant, clones STM32, PCsensor y escáner manual por filtro hexadecimal VID/PID.
+- **Distribución de Teclas Dinámica:** Matriz visual adaptable con soporte para disposiciones 1x3 + 1 Perilla, 2x3 + 1 Perilla, 3x3 + 2 Perillas, 3x4 + 2 Perillas y 4x4.
 - **Optimizado para OBS Studio:** Asignación directa de teclas `F13` a `F18` para silenciar micrófono, cambiar escenas e iniciar grabación sin colisiones con tu teclado principal.
 - **Inicio Automático en Windows:** Interruptor de activación en la interfaz o mediante script para inicio silencioso al encender la PC (`HKCU Run`).
 

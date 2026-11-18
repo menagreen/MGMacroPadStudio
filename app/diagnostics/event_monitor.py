@@ -131,13 +131,13 @@ class WindowsInputMonitor:
 
         self._hook_proc = HOOKPROC(_low_level_proc)
         user32 = ctypes.windll.user32
-        kernel32 = ctypes.windll.kernel32
 
-        h_module = kernel32.GetModuleHandleW(None)
-        self._hook = user32.SetWindowsHookExW(WH_KEYBOARD_LL, self._hook_proc, h_module, 0)
+        # In Windows 64-bit / modern OS, WH_KEYBOARD_LL accepts NULL hmod for in-process hooks
+        self._hook = user32.SetWindowsHookExW(WH_KEYBOARD_LL, self._hook_proc, 0, 0)
 
         if not self._hook:
-            logger.error("Failed to install WH_KEYBOARD_LL hook.")
+            err = ctypes.windll.kernel32.GetLastError()
+            logger.error(f"Failed to install WH_KEYBOARD_LL hook. Error code: {err}")
             return
 
         logger.info("Windows low-level input monitor hook installed.")

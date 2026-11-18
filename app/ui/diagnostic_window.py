@@ -180,7 +180,8 @@ class DiagnosticWindow(QMainWindow):
         self.status_badge.setObjectName("badgeWarn")
         header.addWidget(self.status_badge)
 
-        self.safe_badge = QLabel("MODO SEGURO (SOLO LECTURA)")
+        self.safe_badge = QLabel("FASE 1: SOLO LECTURA (Hardware Protegido)")
+        self.safe_badge.setToolTip("En esta fase no se sobrescribe la memoria flash del macropad para evitar desconfiguraciones accidentales.")
         self.safe_badge.setObjectName("badgeOk")
         header.addWidget(self.safe_badge)
 
@@ -217,15 +218,26 @@ class DiagnosticWindow(QMainWindow):
         for idx, text, r, c in key_defs:
             btn = QPushButton(text)
             btn.setObjectName("macropadKey")
+            btn.setCursor(Qt.PointingHandCursor)
+            btn.clicked.connect(lambda checked=False, i=idx: self._select_control(i))
             self.key_buttons[idx] = btn
             grid.addWidget(btn, r, c)
 
         # Knob button on the right
-        self.knob_button = QPushButton("KNOB")
+        self.knob_button = QPushButton("KNOB\n(Vol/Mute)")
         self.knob_button.setObjectName("macropadKnob")
+        self.knob_button.setCursor(Qt.PointingHandCursor)
+        self.knob_button.clicked.connect(lambda: self._select_control(16))
         grid.addWidget(self.knob_button, 0, 3, 2, 1, Qt.AlignCenter)
 
         pad_vbox.addLayout(grid)
+
+        # Control detail label below the pad
+        self.control_detail = QLabel("Haz clic en cualquier tecla o presiona una tecla física en el macropad.")
+        self.control_detail.setStyleSheet("color: #A0ABC0; font-size: 12px; padding: 4px;")
+        self.control_detail.setAlignment(Qt.AlignCenter)
+        pad_vbox.addWidget(self.control_detail)
+
         left_col.addWidget(pad_frame)
 
         # Device Info Card
@@ -311,20 +323,43 @@ class DiagnosticWindow(QMainWindow):
         timestamp = datetime.now().strftime("%H:%M:%S.%f")[:-3]
         self.log_text.append(f"[{timestamp}] {msg}")
 
+    def _select_control(self, idx: int):
+        """Display details when user clicks a button in the visual representation."""
+        if idx in self.key_buttons:
+            name = f"Tecla Física {idx + 1} (Índice firmware: {idx})"
+            action = "Ctrl + A (Keyboard)"
+            raw = "[32, 0x01, 0x04, 0x00]"
+            self.control_detail.setText(f"<b>{name}</b> | Acción: <font color='#00ADB5'>{action}</font> | Raw: {raw}")
+            btn = self.key_buttons[idx]
+            btn.setStyleSheet("border-color: #00ADB5; background-color: #2D3342;")
+            QTimer.singleShot(400, lambda b=btn: b.setStyleSheet(""))
+        elif idx in (16, 17, 18):
+            self.control_detail.setText(
+                "<b>Perilla Rotatoria (3 Acciones):</b> "
+                "Pulsar: <font color='#FF5722'>Mute</font> | "
+                "Giro Der: <font color='#00ADB5'>Vol +</font> | "
+                "Giro Izq: <font color='#00ADB5'>Vol -</font>"
+            )
+            if self.knob_button:
+                self.knob_button.setStyleSheet("background-color: #FF5722; color: #FFFFFF;")
+                QTimer.singleShot(400, lambda: self.knob_button.setStyleSheet(""))
+
     def _on_input_event(self, evt: InputEvent):
         """Handle incoming input events and highlight UI."""
-        self.log_message(f"EVENT: {evt.event_type} | {evt.key_name} | {evt.details}")
+        self.log_message(f"ENTRADA: {evt.event_type:10s} | {evt.key_name:20s} | {evt.details}")
 
         # Highlight keys
-        if "Ctrl + A" in evt.key_name or "Key 1..6" in evt.key_name:
-            # Highlight all keys briefly as proof of input reception
+        if "Ctrl + A" in evt.key_name or "Key 1..6" in evt.key_name or evt.vk_code == ord('A'):
+            self.control_detail.setText("<font color='#00ADB5'><b>¡Tecla Física Detectada!</b> Acción recibida: Ctrl + A</font>")
             for btn in self.key_buttons.values():
-                btn.setStyleSheet("background-color: #00ADB5; color: white;")
-                QTimer.singleShot(250, lambda b=btn: b.setStyleSheet(""))
-        elif "Knob" in evt.key_name:
+                btn.setStyleSheet("background-color: #00ADB5; color: #FFFFFF; border: 2px solid #FFFFFF;")
+                QTimer.singleShot(300, lambda b=btn: b.setStyleSheet(""))
+        elif "Knob" in evt.key_name or evt.vk_code in (0xAD, 0xAE, 0xAF):
+            action_desc = "Silencio (Mute)" if evt.vk_code == 0xAD else ("Volumen +" if evt.vk_code == 0xAF else "Volumen -")
+            self.control_detail.setText(f"<font color='#FF5722'><b>¡Perilla Detectada!</b> Acción: {action_desc}</font>")
             if self.knob_button:
-                self.knob_button.setStyleSheet("background-color: #FF5722; color: white; border: 3px solid #FFFFFF;")
-                QTimer.singleShot(250, lambda: self.knob_button.setStyleSheet(""))
+                self.knob_button.setStyleSheet("background-color: #FF5722; color: #FFFFFF; border: 3px solid #FFFFFF;")
+                QTimer.singleShot(300, lambda: self.knob_button.setStyleSheet(""))
 
     def scan_and_inspect(self):
         """Scan HID devices and inspect macropad state."""

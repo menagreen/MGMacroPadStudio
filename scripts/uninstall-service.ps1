@@ -1,17 +1,17 @@
-﻿# MacroPad Studio — Script de desinstalación del servicio
+﻿# MacroPad Studio by MenaGreen — Desinstalador de inicio automático en Windows
 $ErrorActionPreference = "SilentlyContinue"
 
 $RegistryPath = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run"
 $ValueName = "MacroPadStudioService"
 
 Write-Host "============================================================" -ForegroundColor Yellow
-Write-Host " Deteniendo y desinstalando MacroPad Service de Windows" -ForegroundColor Yellow
+Write-Host " Deteniendo y desinstalando MacroPad Studio Service" -ForegroundColor Yellow
 Write-Host "============================================================" -ForegroundColor Yellow
 
-# Detener proceso si está corriendo
-$Procs = Get-Process -Name "macropad-service" -ErrorAction SilentlyContinue
+# Detener procesos activos
+$Procs = Get-Process | Where-Object { $_.ProcessName -like "*macropad*" }
 if ($Procs) {
-    Write-Host "[+] Deteniendo procesos activos de macropad-service..." -ForegroundColor Yellow
+    Write-Host "[+] Deteniendo procesos activos de macropad-studio..." -ForegroundColor Yellow
     $Procs | Stop-Process -Force
     Write-Host "[✓] Procesos detenidos." -ForegroundColor Green
 }

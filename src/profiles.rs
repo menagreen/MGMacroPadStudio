@@ -210,6 +210,57 @@ impl ProfileManager {
         }
     }
 
+    pub fn create_profile(&mut self, name: &str, theme_color: (u8, u8, u8)) {
+        let id = format!("profile_{}", self.profiles.len() + 1);
+        let mut key_colors = HashMap::new();
+        for i in 0..6 {
+            key_colors.insert(i.to_string(), theme_color);
+        }
+        for i in 16..19 {
+            key_colors.insert(i.to_string(), theme_color);
+        }
+
+        let mut key_bindings = HashMap::new();
+        // Default Key 6 as profile switcher
+        key_bindings.insert("5".to_string(), KeyConfig {
+            type_id: 32,
+            code1: 0,
+            code2: 115, // F24
+            code3: 0,
+            label: "Cambio de Perfil (F24)".to_string(),
+            is_profile_switch: true,
+        });
+
+        let new_p = Profile {
+            id,
+            name: name.to_string(),
+            description: format!("Perfil {}", name),
+            theme_color,
+            light_mode: 5,
+            light_brightness: 4,
+            light_speed: 2,
+            key_colors,
+            key_bindings,
+        };
+
+        self.profiles.push(new_p);
+        self.active_index = self.profiles.len() - 1;
+        self.save();
+    }
+
+    pub fn delete_active_profile(&mut self) -> bool {
+        if self.profiles.len() > 1 {
+            self.profiles.remove(self.active_index);
+            if self.active_index >= self.profiles.len() {
+                self.active_index = self.profiles.len() - 1;
+            }
+            self.save();
+            true
+        } else {
+            false
+        }
+    }
+
     pub fn apply_to_hardware(&self, dev: &SdcxDevice) -> Result<(), String> {
         let p = self.active_profile();
         println!("[+] Aplicando perfil '{}' al hardware...", p.name);

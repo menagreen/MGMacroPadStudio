@@ -28,6 +28,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from ctypes import wintypes
 from app.hid.discovery import HidDiscovery, HidDeviceInfo
 from app.hid.transport import HidTransport
 from app.hid.protocol import (
@@ -40,7 +41,7 @@ from app.hid.protocol import (
     TYPE_DISABLED,
     LIGHT_MODES,
 )
-from app.diagnostics.event_monitor import SafeInputEventFilter, InputEvent
+from app.diagnostics.event_monitor import WindowsRawInputManager, InputEvent
 
 logger = logging.getLogger(__name__)
 
@@ -202,9 +203,8 @@ class DiagnosticWindow(QMainWindow):
         self.bridge = EventBridge()
         self.bridge.event_received.connect(self._on_input_event)
 
-        # Non-blocking application event filter - does NOT touch Windows hook chain or primary keyboard
-        self.event_filter = SafeInputEventFilter(callback=self.bridge.event_received.emit)
-        QApplication.instance().installEventFilter(self.event_filter)
+        # Isolated Windows RawInput Manager - filters specifically by Macropad hardware ID
+        self.raw_input = WindowsRawInputManager(callback=self.bridge.event_received.emit)
 
         self.key_buttons: Dict[int, QPushButton] = {}
         self.knob_button: Optional[QPushButton] = None
@@ -219,10 +219,24 @@ class DiagnosticWindow(QMainWindow):
 
         QTimer.singleShot(150, self.scan_and_inspect)
 
+    def showEvent(self, event):
+        super().showEvent(event)
+        if not getattr(self, "_raw_input_registered", False):
+            self._raw_input_registered = True
+            hwnd = int(self.winId())
+            self.raw_input.register(hwnd)
+
+    def nativeEvent(self, eventType, message):
+        if message:
+            try:
+                msg = wintypes.MSG.from_address(int(message))
+                if msg.message == 0x00FF:  # WM_INPUT
+                    self.raw_input.process_raw_input(msg.lParam)
+            except Exception as e:
+                logger.debug(f"nativeEvent error: {e}")
+        return super().nativeEvent(eventType, message)
+
     def closeEvent(self, event):
-        app = QApplication.instance()
-        if app and hasattr(self, "event_filter"):
-            app.removeEventFilter(self.event_filter)
         self.transport.close()
         super().closeEvent(event)
 
@@ -501,11 +515,11 @@ class DiagnosticWindow(QMainWindow):
 
     def _on_input_event(self, evt: InputEvent):
         """Handle incoming input events and highlight individual keys."""
-        self.log_message(f"ENTRADA: {evt.event_type:10s} | {evt.key_name:20s} | {evt.details}")
+        self.log_message(f"ENTRADA MACROPAD: {evt.event_type:10s} | {evt.key_name:20s} | {evt.details}")
 
         # Check for Key 1..6
         for i in range(6):
-            if f"Key {i+1}" in evt.key_name:
+            if f"Key {i+1}" in evt.key_name or evt.key_name == f"Key {chr(ord('1')+i)}":
                 if i in self.key_buttons:
                     btn = self.key_buttons[i]
                     btn.setStyleSheet("background-color: #00ADB5; color: #FFFFFF; border: 2px solid #FFFFFF;")
@@ -513,8 +527,28 @@ class DiagnosticWindow(QMainWindow):
                     self.control_detail.setText(f"<font color='#00ADB5'><b>¡Tecla Física {i+1} Pulsada!</b> Reporte: '{evt.key_name}'</font>")
                 return
 
+        # Check for numbers '1'..'6'
+        if ord('1') <= evt.vk_code <= ord('6'):
+            idx = evt.vk_code - ord('1')
+            if idx in self.key_buttons:
+                btn = self.key_buttons[idx]
+                btn.setStyleSheet("background-color: #00ADB5; color: #FFFFFF; border: 2px solid #FFFFFF;")
+                QTimer.singleShot(250, lambda b=btn: b.setStyleSheet(""))
+                self.control_detail.setText(f"<font color='#00ADB5'><b>¡Tecla Física {idx+1} Pulsada!</b> Reporte: '{chr(evt.vk_code)}'</font>")
+                return
+
+        # Check for F13..F18
+        if 0x7C <= evt.vk_code <= 0x81:
+            idx = evt.vk_code - 0x7C
+            if idx in self.key_buttons:
+                btn = self.key_buttons[idx]
+                btn.setStyleSheet("background-color: #00ADB5; color: #FFFFFF; border: 2px solid #FFFFFF;")
+                QTimer.singleShot(250, lambda b=btn: b.setStyleSheet(""))
+                self.control_detail.setText(f"<font color='#00ADB5'><b>¡Tecla Física {idx+1} Pulsada!</b> Reporte: F{13+idx}</font>")
+                return
+
         # Check knob
-        if "Knob" in evt.key_name:
+        if "Knob" in evt.key_name or evt.vk_code in (0xAD, 0xAE, 0xAF):
             if self.knob_button:
                 self.knob_button.setStyleSheet("background-color: #FF5722; color: #FFFFFF; border: 3px solid #FFFFFF;")
                 QTimer.singleShot(250, lambda: self.knob_button.setStyleSheet(""))
@@ -522,7 +556,7 @@ class DiagnosticWindow(QMainWindow):
                 return
 
         # Fallback for Ctrl + A
-        if "Ctrl + A" in evt.key_name:
+        if "Ctrl + A" in evt.key_name or evt.vk_code == ord('A'):
             for btn in self.key_buttons.values():
                 btn.setStyleSheet("background-color: #E67E22; color: #FFFFFF;")
                 QTimer.singleShot(250, lambda b=btn: b.setStyleSheet(""))

@@ -18,6 +18,7 @@ from PySide6.QtWidgets import (
     QGroupBox,
     QHBoxLayout,
     QHeaderView,
+    QInputDialog,
     QLabel,
     QMainWindow,
     QMenu,
@@ -358,11 +359,29 @@ class DiagnosticWindow(QMainWindow):
 
         header.addWidget(QLabel("<b>Perfil Activo:</b>"))
         self.profile_combo = QComboBox()
-        self.profile_combo.setMinimumWidth(190)
+        self.profile_combo.setMinimumWidth(180)
         for p in self.profile_mgr.profiles:
             self.profile_combo.addItem(p.name, p.id)
         self.profile_combo.currentIndexChanged.connect(self._on_profile_combo_changed)
         header.addWidget(self.profile_combo)
+
+        btn_new_profile = QPushButton("+ Nuevo")
+        btn_new_profile.setToolTip("Crear un nuevo perfil")
+        btn_new_profile.setProperty("class", "secondaryBtn")
+        btn_new_profile.clicked.connect(self._create_new_profile)
+        header.addWidget(btn_new_profile)
+
+        btn_color_profile = QPushButton("Color Perfil")
+        btn_color_profile.setToolTip("Cambiar el color temático de este perfil")
+        btn_color_profile.setProperty("class", "secondaryBtn")
+        btn_color_profile.clicked.connect(self._change_profile_theme_color)
+        header.addWidget(btn_color_profile)
+
+        btn_del_profile = QPushButton("Eliminar")
+        btn_del_profile.setToolTip("Eliminar el perfil actual")
+        btn_del_profile.setProperty("class", "secondaryBtn")
+        btn_del_profile.clicked.connect(self._delete_current_profile)
+        header.addWidget(btn_del_profile)
 
         btn_apply_profile = QPushButton("Aplicar al Hardware")
         btn_apply_profile.setProperty("class", "actionBtn")
@@ -501,6 +520,13 @@ class DiagnosticWindow(QMainWindow):
         btn_custom_color.setProperty("class", "secondaryBtn")
         btn_custom_color.clicked.connect(self._open_custom_color_dialog)
         swatch_layout.addWidget(btn_custom_color)
+
+        btn_fill_all = QPushButton("Pintar Todas")
+        btn_fill_all.setToolTip("Aplica este color a todas las teclas del perfil")
+        btn_fill_all.setProperty("class", "secondaryBtn")
+        btn_fill_all.clicked.connect(self._apply_selected_color_to_all_keys)
+        swatch_layout.addWidget(btn_fill_all)
+
         swatch_layout.addStretch()
         editor_vbox.addLayout(swatch_layout)
 
@@ -613,6 +639,64 @@ class DiagnosticWindow(QMainWindow):
             self._update_key_labels()
         except Exception as e:
             self.log_message(f"Error escribiendo función: {e}")
+
+    def _create_new_profile(self):
+        name, ok = QInputDialog.getText(self, "Nuevo Perfil", "Nombre del nuevo perfil (ej. Blender, Valorant, Edición):")
+        if ok and name.strip():
+            color = QColorDialog.getColor(QColor(0, 173, 181), self, f"Color Temático para '{name}'")
+            theme_rgb = (color.red(), color.green(), color.blue()) if color.isValid() else (0, 173, 181)
+            new_p = self.profile_mgr.create_profile(name.strip(), theme_color=theme_rgb)
+            self._rebuild_profile_combo()
+            self._load_active_profile_ui()
+            self._apply_current_profile_to_hardware()
+            self.log_message(f"Nuevo perfil creado y activado: '{new_p.name}'")
+
+    def _delete_current_profile(self):
+        curr = self.profile_mgr.active_profile
+        if len(self.profile_mgr.profiles) <= 1:
+            QMessageBox.warning(self, "No permitido", "Debe existir al menos un perfil activo.")
+            return
+
+        res = QMessageBox.question(
+            self,
+            "Eliminar Perfil",
+            f"¿Estás seguro de que deseas eliminar el perfil '{curr.name}'?",
+            QMessageBox.Yes | QMessageBox.No,
+        )
+        if res == QMessageBox.Yes:
+            self.profile_mgr.delete_profile(curr.id)
+            self._rebuild_profile_combo()
+            self._load_active_profile_ui()
+            self._apply_current_profile_to_hardware()
+            self.log_message(f"Perfil eliminado: '{curr.name}'")
+
+    def _change_profile_theme_color(self):
+        curr = self.profile_mgr.active_profile
+        color = QColorDialog.getColor(QColor(*curr.theme_color), self, f"Color Temático para '{curr.name}'")
+        if color.isValid():
+            rgb = (color.red(), color.green(), color.blue())
+            self.profile_mgr.set_profile_theme_color(curr.id, rgb)
+            self._load_active_profile_ui()
+            self._apply_current_profile_to_hardware()
+            self.log_message(f"Color temático de '{curr.name}' actualizado a RGB {rgb}.")
+
+    def _apply_selected_color_to_all_keys(self):
+        idx = self.selected_key_index
+        curr = self.profile_mgr.active_profile
+        col = curr.key_colors.get(idx, curr.theme_color)
+        self.profile_mgr.set_profile_theme_color(curr.id, col)
+        self._load_active_profile_ui()
+        self._apply_current_profile_to_hardware()
+        self.log_message(f"Pintadas todas las teclas del perfil '{curr.name}' con el color RGB {col}.")
+
+    def _rebuild_profile_combo(self):
+        self.profile_combo.blockSignals(True)
+        self.profile_combo.clear()
+        for p in self.profile_mgr.profiles:
+            self.profile_combo.addItem(p.name, p.id)
+        self.profile_combo.setCurrentIndex(self.profile_mgr.active_profile_index)
+        self.profile_combo.blockSignals(False)
+        self._rebuild_tray_profiles()
 
     def _on_profile_combo_changed(self, index: int):
         if index < 0 or index >= len(self.profile_mgr.profiles):

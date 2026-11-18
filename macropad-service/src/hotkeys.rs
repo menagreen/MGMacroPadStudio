@@ -31,7 +31,14 @@ impl HotkeyManager {
     pub fn run_loop<F: FnMut(i32)>(mut callback: F) {
         unsafe {
             let mut msg: MSG = std::mem::zeroed();
-            while GetMessageW(&mut msg, std::ptr::null_mut(), 0, 0) > 0 {
+            loop {
+                let res = GetMessageW(&mut msg, std::ptr::null_mut(), 0, 0);
+                if res <= 0 {
+                    // res == 0 means WM_QUIT; res == -1 means error
+                    let err = windows_sys::Win32::Foundation::GetLastError();
+                    let _ = std::fs::write("service_exit.log", format!("GetMessageW returned {res}, GetLastError={err}\n"));
+                    break;
+                }
                 if msg.message == WM_HOTKEY {
                     let hotkey_id = msg.wParam as i32;
                     callback(hotkey_id);

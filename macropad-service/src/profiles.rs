@@ -168,6 +168,21 @@ impl ProfileManager {
         (p1, p2, p3)
     }
 
+    pub fn reload(&mut self) {
+        if self.file_path.exists() {
+            if let Ok(content) = fs::read_to_string(&self.file_path) {
+                if let Ok(doc) = serde_json::from_str::<ProfilesDocument>(&content) {
+                    if !doc.profiles.is_empty() {
+                        self.profiles = doc.profiles;
+                        if self.active_index >= self.profiles.len() {
+                            self.active_index = doc.active_index.min(self.profiles.len() - 1);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     pub fn active_profile(&self) -> &Profile {
         if self.active_index < self.profiles.len() {
             &self.profiles[self.active_index]
@@ -177,6 +192,7 @@ impl ProfileManager {
     }
 
     pub fn next_profile(&mut self) -> &Profile {
+        self.reload();
         if !self.profiles.is_empty() {
             self.active_index = (self.active_index + 1) % self.profiles.len();
             self.save();

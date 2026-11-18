@@ -9,34 +9,29 @@ if (-not (Test-Path $ExePath)) {
     exit 1
 }
 
-$TaskName = "MacroPadStudioService"
+$RegistryPath = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run"
+$ValueName = "MacroPadStudioService"
 
 Write-Host "============================================================" -ForegroundColor Cyan
-Write-Host " Instalando MacroPad Service como Tarea de Inicio en Windows" -ForegroundColor Cyan
+Write-Host " Configurando MacroPad Service para inicio con Windows" -ForegroundColor Cyan
 Write-Host "============================================================" -ForegroundColor Cyan
 
-# Eliminar tarea previa si ya existe
-try {
-    Unregister-ScheduledTask -TaskName $TaskName -Confirm:$false -ErrorAction SilentlyContinue | Out-Null
-} catch {}
+# Registrar en HKCU Run (Inicio de sesión del usuario sin requerir elevación de administrador)
+Set-ItemProperty -Path $RegistryPath -Name $ValueName -Value "`"$ExePath`""
 
-$Action = New-ScheduledTaskAction -Execute $ExePath -WorkingDirectory (Split-Path -Parent $ExePath)
-$Trigger = New-ScheduledTaskTrigger -AtLogOn
-$Settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -ExecutionTimeLimit 0 -Priority 4
+Write-Host "[✓] Registro de inicio automático configurado exitosamente." -ForegroundColor Green
+Write-Host "    Clave: $RegistryPath\$ValueName" -ForegroundColor DarkGray
+Write-Host "    Se ejecutará de forma silenciosa e invisible en segundo plano al iniciar sesión." -ForegroundColor Green
 
-Register-ScheduledTask -TaskName $TaskName -Action $Action -Trigger $Trigger -Settings $Settings -Description "MacroPad Studio SDCX Background Service" | Out-Null
+# Detener instancias previas e iniciar el servicio ahora
+Get-Process | Where-Object { $_.ProcessName -like "*macropad*" } | Stop-Process -Force -ErrorAction SilentlyContinue
+Start-Sleep -Milliseconds 300
 
-Write-Host "[✓] Tarea programada '$TaskName' registrada exitosamente." -ForegroundColor Green
-Write-Host "    Se ejecutará automáticamente al iniciar sesión en Windows." -ForegroundColor Green
+$proc = Start-Process -FilePath $ExePath -WorkingDirectory (Split-Path -Parent $ExePath) -PassThru
 
-# Iniciar la tarea ahora mismo
-Write-Host "[+] Iniciando servicio ahora mismo..." -ForegroundColor Yellow
-Start-ScheduledTask -TaskName $TaskName
-
-Start-Sleep -Seconds 1
-$Running = Get-Process -Name "macropad-service" -ErrorAction SilentlyContinue
-if ($Running) {
-    Write-Host "[✓] Servicio activo y ejecutándose en segundo plano (PID: $($Running.Id))." -ForegroundColor Green
+Start-Sleep -Milliseconds 500
+if ($proc -and -not $proc.HasExited) {
+    Write-Host "[✓] Servicio activo y ejecutándose en segundo plano (PID: $($proc.Id))." -ForegroundColor Green
 } else {
-    Write-Host "[!] El proceso no reporta estar activo aún. Puedes ejecutarlo manualmente con: $ExePath" -ForegroundColor Yellow
+    Write-Host "[!] El proceso se inició pero no reporta PID activo." -ForegroundColor Yellow
 }

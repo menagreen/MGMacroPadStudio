@@ -1,10 +1,11 @@
 ﻿# MacroPad Studio — Script de desinstalación del servicio
 $ErrorActionPreference = "SilentlyContinue"
 
-$TaskName = "MacroPadStudioService"
+$RegistryPath = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run"
+$ValueName = "MacroPadStudioService"
 
 Write-Host "============================================================" -ForegroundColor Yellow
-Write-Host " Deteniendo y desinstalando MacroPad Service" -ForegroundColor Yellow
+Write-Host " Deteniendo y desinstalando MacroPad Service de Windows" -ForegroundColor Yellow
 Write-Host "============================================================" -ForegroundColor Yellow
 
 # Detener proceso si está corriendo
@@ -15,8 +16,7 @@ if ($Procs) {
     Write-Host "[✓] Procesos detenidos." -ForegroundColor Green
 }
 
-# Detener tarea programada
-Stop-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue | Out-Null
-Unregister-ScheduledTask -TaskName $TaskName -Confirm:$false -ErrorAction SilentlyContinue | Out-Null
+# Remover de HKCU Run
+Remove-ItemProperty -Path $RegistryPath -Name $ValueName -ErrorAction SilentlyContinue | Out-Null
 
-Write-Host "[✓] Servicio '$TaskName' eliminado del inicio de Windows." -ForegroundColor Green
+Write-Host "[✓] Entrada de inicio automático eliminada." -ForegroundColor Green

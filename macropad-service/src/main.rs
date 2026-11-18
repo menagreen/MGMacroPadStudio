@@ -1,3 +1,5 @@
+#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+
 mod hotkeys;
 mod profiles;
 mod protocol;
@@ -15,6 +17,12 @@ fn print_banner() {
 }
 
 fn main() {
+    #[cfg(not(debug_assertions))]
+    unsafe {
+        // Attach to parent console if launched from terminal, otherwise remain completely windowless
+        windows_sys::Win32::System::Console::AttachConsole(0xFFFFFFFF);
+    }
+
     print_banner();
 
     // 1. Initialize SDCX Macropad HID

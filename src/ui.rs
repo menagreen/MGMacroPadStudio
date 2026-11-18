@@ -3,13 +3,10 @@
 //! profile management, and live USB HID synchronization.
 
 use crate::autostart::AutostartManager;
-use crate::hotkeys::{HOTKEY_F24, VK_F24};
 use crate::profiles::{KeyConfig, PadLayout, ProfileManager};
 use crate::protocol::{SdcxDevice, KNOWN_DEVICES};
 use eframe::egui::{self, Color32, Rect, Rounding, Stroke, Vec2};
 use std::sync::{mpsc, Arc, Mutex};
-use windows_sys::Win32::UI::Input::KeyboardAndMouse::{RegisterHotKey, UnregisterHotKey, MOD_NOREPEAT};
-use windows_sys::Win32::UI::WindowsAndMessaging::{GetMessageW, MSG, WM_HOTKEY};
 
 const COLOR_MENA_GREEN: Color32 = Color32::from_rgb(0, 255, 136);
 const COLOR_CYAN: Color32 = Color32::from_rgb(0, 229, 255);
@@ -72,42 +69,39 @@ impl MacroPadApp {
         };
 
         let (tx, rx) = mpsc::channel();
-        let thread_mgr = Arc::clone(&profile_mgr);
-        let thread_dev = Arc::clone(&device);
         let egui_ctx = cc.egui_ctx.clone();
 
-        // Spawn background Win32 hotkey listener for Tecla 6 (F24)
-        // Works both when GUI is active or minimized!
+        let (hw_tx, hw_rx) = mpsc::channel();
+        let hw_thread_mgr = Arc::clone(&profile_mgr);
+        let hw_thread_dev = Arc::clone(&device);
+        let hw_tx_gui = tx.clone();
+        let hw_egui_ctx = egui_ctx.clone();
+
+        // 1. Hardware worker thread (executes profile change and USB HID transfers safely)
         std::thread::spawn(move || {
-            unsafe {
-                let ok = RegisterHotKey(std::ptr::null_mut(), HOTKEY_F24, MOD_NOREPEAT, VK_F24);
-                if ok == 0 {
-                    eprintln!("[-] Warning: Could not register F24 hotkey in GUI thread: {}", windows_sys::Win32::Foundation::GetLastError());
-                }
+            while let Ok(()) = hw_rx.recv() {
+                let mut mgr = hw_thread_mgr.lock().unwrap();
+                let _ = mgr.next_profile();
 
-                let mut msg: MSG = std::mem::zeroed();
-                while GetMessageW(&mut msg, std::ptr::null_mut(), 0, 0) > 0 {
-                    if msg.message == WM_HOTKEY && msg.wParam == HOTKEY_F24 as usize {
-                        // 1. Cycle profile and apply to physical hardware
-                        let mut mgr = thread_mgr.lock().unwrap();
-                        let _ = mgr.next_profile();
-
-                        if let Ok(mut guard) = thread_dev.lock() {
-                            if guard.is_none() {
-                                *guard = SdcxDevice::open_first().ok();
-                            }
-                            if let Some(ref dev) = *guard {
-                                let _ = mgr.apply_to_hardware(dev);
-                            }
-                        }
-
-                        // 2. Notify GUI to refresh UI
-                        let _ = tx.send(mgr.active_index as u32);
-                        egui_ctx.request_repaint();
+                if let Ok(mut guard) = hw_thread_dev.lock() {
+                    if guard.is_none() {
+                        *guard = SdcxDevice::open_first().ok();
+                    }
+                    if let Some(ref dev) = *guard {
+                        let _ = mgr.apply_to_hardware(dev);
                     }
                 }
-                UnregisterHotKey(std::ptr::null_mut(), HOTKEY_F24);
+
+                let _ = hw_tx_gui.send(mgr.active_index as u32);
+                hw_egui_ctx.request_repaint();
             }
+        });
+
+        // 2. High-speed Windows hook thread (returns immediately in <0.1ms to satisfy OS watchdog)
+        std::thread::spawn(move || {
+            crate::hotkeys::HotkeyManager::run_loop(move || {
+                let _ = hw_tx.send(());
+            });
         });
 
         Self {

@@ -1,12 +1,13 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod autostart;
+mod daemon;
 mod hotkeys;
 mod profiles;
 mod protocol;
 mod ui;
 
-use hotkeys::{HotkeyManager, HOTKEY_F24};
+use hotkeys::HotkeyManager;
 use profiles::ProfileManager;
 use protocol::SdcxDevice;
 use std::sync::{Arc, Mutex};
@@ -40,13 +41,14 @@ fn run_headless_service() {
         }
     }
 
-    let _ = HotkeyManager::register_profile_switcher();
-
+    let (hw_tx, hw_rx) = std::sync::mpsc::channel();
     let device_clone = Arc::clone(&device);
     let profile_mgr_clone = Arc::clone(&profile_mgr);
 
-    HotkeyManager::run_loop(move |hotkey_id| {
-        if hotkey_id == HOTKEY_F24 {
+    // Dedicated hardware worker thread: runs independently from Windows hook path
+    // Preventing Windows LowLevelHooksTimeout from ever killing the hook!
+    std::thread::spawn(move || {
+        while let Ok(()) = hw_rx.recv() {
             let mut mgr = profile_mgr_clone.lock().unwrap();
             let _ = mgr.next_profile();
 
@@ -61,10 +63,15 @@ fn run_headless_service() {
         }
     });
 
-    HotkeyManager::unregister_all();
+    HotkeyManager::run_loop(move || {
+        let _ = hw_tx.send(());
+    });
 }
 
 fn run_gui() -> Result<(), eframe::Error> {
+    // Gracefully stop any running background service instance so GUI has exclusive hardware control
+    crate::daemon::DaemonManager::stop_background_service();
+
     let mut viewport = eframe::egui::ViewportBuilder::default()
         .with_inner_size([880.0, 530.0])
         .with_min_inner_size([820.0, 480.0])
@@ -86,9 +93,14 @@ fn run_gui() -> Result<(), eframe::Error> {
         ..Default::default()
     };
 
-    eframe::run_native(
+    let result = eframe::run_native(
         "MacroPad Studio by MenaGreen",
         native_options,
         Box::new(|cc| Ok(Box::new(MacroPadApp::new(cc)))),
-    )
+    );
+
+    // When the GUI window closes, keep everything active by spawning the background service!
+    crate::daemon::DaemonManager::spawn_background_service();
+
+    result
 }

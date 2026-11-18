@@ -131,23 +131,31 @@ pub struct ProfileManager {
 
 impl ProfileManager {
     pub fn load_from_paths() -> Self {
-        let mut candidates = vec![
-            PathBuf::from("data/profiles.json"),
-            PathBuf::from("../data/profiles.json"),
-            PathBuf::from("profiles.json"),
-        ];
+        let mut candidates = Vec::new();
 
+        // 1. Check relative to executable location (portable and release setups)
         if let Ok(exe) = std::env::current_exe() {
             if let Some(dir) = exe.parent() {
-                candidates.push(dir.join("data/profiles.json"));
+                candidates.push(dir.join("data").join("profiles.json"));
                 candidates.push(dir.join("profiles.json"));
                 if let Some(p2) = dir.parent() {
-                    candidates.push(p2.join("data/profiles.json"));
+                    candidates.push(p2.join("data").join("profiles.json"));
                     if let Some(p3) = p2.parent() {
-                        candidates.push(p3.join("data/profiles.json"));
+                        candidates.push(p3.join("data").join("profiles.json"));
                     }
                 }
             }
+        }
+
+        // 2. Check current working directory
+        if let Ok(cwd) = std::env::current_dir() {
+            candidates.push(cwd.join("data").join("profiles.json"));
+            candidates.push(cwd.join("profiles.json"));
+        }
+
+        // 3. Check %APPDATA%\MacroPadStudio\profiles.json
+        if let Ok(appdata) = std::env::var("APPDATA") {
+            candidates.push(PathBuf::from(appdata).join("MacroPadStudio").join("profiles.json"));
         }
 
         for path in &candidates {
@@ -155,10 +163,12 @@ impl ProfileManager {
                 if let Ok(content) = fs::read_to_string(path) {
                     if let Ok(doc) = serde_json::from_str::<ProfilesDocument>(&content) {
                         if !doc.profiles.is_empty() {
+                            let resolved = fs::canonicalize(path).unwrap_or_else(|_| path.clone());
+                            let active_index = doc.active_index.min(doc.profiles.len() - 1);
                             return Self {
-                                file_path: path.clone(),
+                                file_path: resolved,
                                 profiles: doc.profiles,
-                                active_index: doc.active_index,
+                                active_index,
                             };
                         }
                     }
@@ -166,13 +176,23 @@ impl ProfileManager {
             }
         }
 
-        // Fallback default profiles if no file found
+        // Fallback default profiles if no file found, saving to AppData or next to exe
+        let fallback_path = if let Ok(appdata) = std::env::var("APPDATA") {
+            PathBuf::from(appdata).join("MacroPadStudio").join("profiles.json")
+        } else if let Ok(exe) = std::env::current_exe() {
+            exe.parent().map(|d| d.join("data").join("profiles.json")).unwrap_or_else(|| PathBuf::from("profiles.json"))
+        } else {
+            PathBuf::from("profiles.json")
+        };
+
         let (p1, p2, p3) = Self::defaults();
-        Self {
-            file_path: PathBuf::from("data/profiles.json"),
+        let mgr = Self {
+            file_path: fallback_path,
             profiles: vec![p1, p2, p3],
             active_index: 0,
-        }
+        };
+        mgr.save();
+        mgr
     }
 
     fn defaults() -> (Profile, Profile, Profile) {
@@ -255,9 +275,7 @@ impl ProfileManager {
                 if let Ok(doc) = serde_json::from_str::<ProfilesDocument>(&content) {
                     if !doc.profiles.is_empty() {
                         self.profiles = doc.profiles;
-                        if self.active_index >= self.profiles.len() {
-                            self.active_index = doc.active_index.min(self.profiles.len() - 1);
-                        }
+                        self.active_index = doc.active_index.min(self.profiles.len() - 1);
                     }
                 }
             }
@@ -286,6 +304,9 @@ impl ProfileManager {
             active_index: self.active_index,
             profiles: self.profiles.clone(),
         };
+        if let Some(parent) = self.file_path.parent() {
+            let _ = fs::create_dir_all(parent);
+        }
         if let Ok(json_str) = serde_json::to_string_pretty(&doc) {
             let _ = fs::write(&self.file_path, json_str);
         }

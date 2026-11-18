@@ -106,11 +106,11 @@ class WindowsRawInputManager:
         self.user32 = ctypes.windll.user32
 
     def register(self, hwnd: int) -> bool:
-        """Register window to receive background notifications for Keyboard and Consumer devices."""
+        """Register window to receive notifications for Keyboard and Consumer devices."""
+        # Use flag 0 (foreground) for Keyboard to bypass Windows 11 security block on background key sinks
+        # Use RIDEV_INPUTSINK for Consumer devices (rotary knob)
         devices = (RAWINPUTDEVICE * 2)(
-            # Keyboard (Generic Desktop 0x01, Keyboard 0x06)
-            RAWINPUTDEVICE(0x01, 0x06, RIDEV_INPUTSINK, hwnd),
-            # Consumer Control (Consumer 0x0C, Consumer Control 0x01)
+            RAWINPUTDEVICE(0x01, 0x06, 0, hwnd),
             RAWINPUTDEVICE(0x0C, 0x01, RIDEV_INPUTSINK, hwnd),
         )
         ok = self.user32.RegisterRawInputDevices(
@@ -121,7 +121,7 @@ class WindowsRawInputManager:
             logger.error(f"Failed to register RawInput devices: error code {err}")
             return False
 
-        logger.info(f"Registered Windows RawInput sink for HWND {hwnd}")
+        logger.info(f"Registered Windows RawInput for HWND {hwnd}")
         return True
 
     def is_target_device(self, h_device: int) -> bool:

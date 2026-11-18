@@ -6,7 +6,7 @@ from typing import Dict, List, Optional
 from datetime import datetime
 
 from PySide6.QtCore import Qt, QTimer, Signal, QObject
-from PySide6.QtGui import QColor, QFont
+from PySide6.QtGui import QColor, QFont, QKeyEvent
 from PySide6.QtWidgets import (
     QApplication,
     QCheckBox,
@@ -211,6 +211,7 @@ class DiagnosticWindow(QMainWindow):
         self.selected_key_index: int = 0
         self.current_bindings: List[KeyBinding] = []
 
+        self.setFocusPolicy(Qt.StrongFocus)
         self._init_ui()
 
         self.refresh_timer = QTimer(self)
@@ -513,47 +514,90 @@ class DiagnosticWindow(QMainWindow):
         except Exception as e:
             self.log_message(f"Error aplicando RGB: {e}")
 
-    def _on_input_event(self, evt: InputEvent):
-        """Handle incoming input events and highlight individual keys."""
-        self.log_message(f"ENTRADA MACROPAD: {evt.event_type:10s} | {evt.key_name:20s} | {evt.details}")
-
-        # Check for Key 1..6
-        for i in range(6):
-            if f"Key {i+1}" in evt.key_name or evt.key_name == f"Key {chr(ord('1')+i)}":
-                if i in self.key_buttons:
-                    btn = self.key_buttons[i]
-                    btn.setStyleSheet("background-color: #00ADB5; color: #FFFFFF; border: 2px solid #FFFFFF;")
-                    QTimer.singleShot(250, lambda b=btn: b.setStyleSheet(""))
-                    self.control_detail.setText(f"<font color='#00ADB5'><b>¡Tecla Física {i+1} Pulsada!</b> Reporte: '{evt.key_name}'</font>")
-                return
-
-        # Check for numbers '1'..'6'
-        if ord('1') <= evt.vk_code <= ord('6'):
-            idx = evt.vk_code - ord('1')
-            if idx in self.key_buttons:
-                btn = self.key_buttons[idx]
-                btn.setStyleSheet("background-color: #00ADB5; color: #FFFFFF; border: 2px solid #FFFFFF;")
-                QTimer.singleShot(250, lambda b=btn: b.setStyleSheet(""))
-                self.control_detail.setText(f"<font color='#00ADB5'><b>¡Tecla Física {idx+1} Pulsada!</b> Reporte: '{chr(evt.vk_code)}'</font>")
-                return
+    def keyPressEvent(self, event: QKeyEvent):
+        """Native Qt key press event handler ensuring reliable input capture when focused."""
+        key = event.key()
 
         # Check for F13..F18
+        if Qt.Key_F13 <= key <= Qt.Key_F18:
+            idx = key - Qt.Key_F13
+            self._trigger_key_visual(idx, f"F{13+idx}")
+            event.accept()
+            return
+
+        # Check for numbers 1..6
+        if Qt.Key_1 <= key <= Qt.Key_6:
+            idx = key - Qt.Key_1
+            self._trigger_key_visual(idx, f"'{idx+1}'")
+            event.accept()
+            return
+
+        # Check for knob multimedia keys
+        if key == Qt.Key_VolumeMute:
+            self._trigger_knob_visual("Mute")
+            event.accept()
+            return
+        elif key == Qt.Key_VolumeUp:
+            self._trigger_knob_visual("Vol +")
+            event.accept()
+            return
+        elif key == Qt.Key_VolumeDown:
+            self._trigger_knob_visual("Vol -")
+            event.accept()
+            return
+
+        # Check for Ctrl + A
+        if key == Qt.Key_A and (event.modifiers() & Qt.ControlModifier):
+            self.log_message("ENTRADA TECLADO: Ctrl + A")
+            for btn in self.key_buttons.values():
+                btn.setStyleSheet("background-color: #E67E22; color: #FFFFFF;")
+                QTimer.singleShot(250, lambda b=btn: b.setStyleSheet(""))
+            self.control_detail.setText("<font color='#E67E22'>Pulsación detectada con mapeo compartido (Ctrl+A).</font>")
+            event.accept()
+            return
+
+        super().keyPressEvent(event)
+
+    def _trigger_key_visual(self, idx: int, name: str):
+        if idx in self.key_buttons:
+            btn = self.key_buttons[idx]
+            btn.setStyleSheet("background-color: #00ADB5; color: #FFFFFF; border: 2px solid #FFFFFF;")
+            QTimer.singleShot(250, lambda b=btn: b.setStyleSheet(""))
+            self.control_detail.setText(f"<font color='#00ADB5'><b>¡Tecla Física {idx+1} Pulsada!</b> Acción: {name}</font>")
+            self.log_message(f"ENTRADA MACROPAD: Tecla Física {idx+1} ({name})")
+
+    def _trigger_knob_visual(self, action: str):
+        if self.knob_button:
+            self.knob_button.setStyleSheet("background-color: #FF5722; color: #FFFFFF; border: 3px solid #FFFFFF;")
+            QTimer.singleShot(250, lambda: self.knob_button.setStyleSheet(""))
+            self.control_detail.setText(f"<font color='#FF5722'><b>¡Perilla Detectada!</b> Acción: {action}</font>")
+            self.log_message(f"ENTRADA MACROPAD: Perilla ({action})")
+
+    def _on_input_event(self, evt: InputEvent):
+        """Handle incoming input events and highlight individual keys."""
+        # Check for Key 1..6 or F13..F18 from RawInput
+        for i in range(6):
+            if f"Key {i+1}" in evt.key_name or evt.key_name == f"Key F{13+i}":
+                self._trigger_key_visual(i, evt.key_name)
+                return
+
+        # Check for virtual key numbers '1'..'6'
+        if ord('1') <= evt.vk_code <= ord('6'):
+            idx = evt.vk_code - ord('1')
+            self._trigger_key_visual(idx, f"'{chr(evt.vk_code)}'")
+            return
+
+        # Check for virtual key F13..F18
         if 0x7C <= evt.vk_code <= 0x81:
             idx = evt.vk_code - 0x7C
-            if idx in self.key_buttons:
-                btn = self.key_buttons[idx]
-                btn.setStyleSheet("background-color: #00ADB5; color: #FFFFFF; border: 2px solid #FFFFFF;")
-                QTimer.singleShot(250, lambda b=btn: b.setStyleSheet(""))
-                self.control_detail.setText(f"<font color='#00ADB5'><b>¡Tecla Física {idx+1} Pulsada!</b> Reporte: F{13+idx}</font>")
-                return
+            self._trigger_key_visual(idx, f"F{13+idx}")
+            return
 
         # Check knob
         if "Knob" in evt.key_name or evt.vk_code in (0xAD, 0xAE, 0xAF):
-            if self.knob_button:
-                self.knob_button.setStyleSheet("background-color: #FF5722; color: #FFFFFF; border: 3px solid #FFFFFF;")
-                QTimer.singleShot(250, lambda: self.knob_button.setStyleSheet(""))
-                self.control_detail.setText(f"<font color='#FF5722'><b>¡Perilla Detectada!</b> Acción: {evt.key_name}</font>")
-                return
+            action = "Mute" if evt.vk_code == 0xAD else ("Vol +" if evt.vk_code == 0xAF else "Vol -")
+            self._trigger_knob_visual(action)
+            return
 
         # Fallback for Ctrl + A
         if "Ctrl + A" in evt.key_name or evt.vk_code == ord('A'):

@@ -356,3 +356,34 @@ class SdcxProtocol:
         resp = self.transport.transfer(CMD_GROUP_CONFIG, 11, payload)
         return len(resp) >= 2 and resp[0] == 0xAA
 
+    def set_key_color(self, key_index: int, r: int, g: int, b: int) -> bool:
+        """Write single key RGB color directly into macropad hardware memory."""
+        offset = key_index * 3
+        # Wire: [0x06, 20, 3, off_lo, off_hi, 0, 0, 0, r, g, b]
+        payload = bytes([3, offset & 0xFF, (offset >> 8) & 0xFF, 0, 0, 0, r & 0xFF, g & 0xFF, b & 0xFF])
+        resp = self.transport.transfer(CMD_GROUP_CONFIG, 20, payload)
+        return len(resp) >= 2 and resp[0] == 0xAA
+
+    def set_all_key_colors(self, colors: Dict[int, Tuple[int, int, int]]) -> bool:
+        """Write colors for all keys and ensure custom mode (5) is active."""
+        self.set_light_config(mode=5, brightness=4, speed=2, color_type=0)
+        success = True
+        for idx, (r, g, b) in colors.items():
+            if not self.set_key_color(idx, r, g, b):
+                success = False
+        return success
+
+    def get_key_colors(self) -> Dict[int, Tuple[int, int, int]]:
+        """Read per-key RGB colors for all keys."""
+        payload = bytes([58, 0, 0])
+        resp = self.transport.transfer(CMD_GROUP_CONFIG, 19, payload)
+        colors = {}
+        if len(resp) >= 64 and resp[0] == 0xAA:
+            data = resp[8:64]
+            for idx, _ in PHYSICAL_KEYS:
+                off = idx * 3
+                if off + 3 <= len(data):
+                    colors[idx] = (data[off], data[off + 1], data[off + 2])
+        return colors
+
+
